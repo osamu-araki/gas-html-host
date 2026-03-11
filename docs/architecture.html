@@ -1,0 +1,317 @@
+<!-- Version: 1.0.0 | Updated: 2026-03-11 -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HTML Host - 要件定義・概要設計</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", sans-serif; color: #283C50; background: #f8fafa; line-height: 1.7; }
+    .container { max-width: 960px; margin: 0 auto; padding: 40px 24px; }
+    h1 { color: #2A9BA1; font-size: 28px; border-bottom: 3px solid #2A9BA1; padding-bottom: 12px; margin-bottom: 32px; }
+    h2 { color: #283C50; font-size: 20px; margin: 40px 0 16px; padding-left: 12px; border-left: 4px solid #2A9BA1; }
+    h3 { color: #27878A; font-size: 16px; margin: 24px 0 12px; }
+    p { margin: 8px 0; }
+    table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    th { background: #2A9BA1; color: white; padding: 10px 14px; text-align: left; font-size: 14px; }
+    td { padding: 10px 14px; border-bottom: 1px solid #e0e0e0; font-size: 14px; }
+    tr:hover { background: #f0f8f8; }
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+    .badge-done { background: #d4edda; color: #155724; }
+    .badge-todo { background: #fff3cd; color: #856404; }
+    .badge-skip { background: #e2e3e5; color: #6c757d; }
+    .note { background: #f0f8f8; border-left: 4px solid #94CDD0; padding: 12px 16px; margin: 16px 0; font-size: 14px; border-radius: 0 4px 4px 0; }
+    .warn { background: #fff8e1; border-left: 4px solid #ffc107; padding: 12px 16px; margin: 16px 0; font-size: 14px; border-radius: 0 4px 4px 0; }
+
+    /* 図解 */
+    .diagram { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 32px 24px; margin: 24px 0; overflow-x: auto; }
+    .diagram-title { text-align: center; font-size: 14px; color: #939DA7; margin-bottom: 20px; }
+
+    /* アーキテクチャ図 */
+    .arch { display: flex; align-items: center; justify-content: center; gap: 0; flex-wrap: wrap; }
+    .arch-box { padding: 16px 20px; border-radius: 8px; text-align: center; min-width: 140px; position: relative; }
+    .arch-box .label { font-size: 11px; color: #939DA7; margin-bottom: 4px; }
+    .arch-box .name { font-weight: bold; font-size: 15px; }
+    .arch-box .detail { font-size: 11px; color: #666; margin-top: 4px; }
+    .arch-cli { background: #182F46; color: white; }
+    .arch-cli .label { color: #94CDD0; }
+    .arch-cli .detail { color: #aaa; }
+    .arch-api { background: #e8f5e9; border: 2px solid #4caf50; }
+    .arch-drive { background: #e3f2fd; border: 2px solid #2196f3; }
+    .arch-gas { background: #fff3e0; border: 2px solid #ff9800; }
+    .arch-user { background: #fce4ec; border: 2px solid #e91e63; }
+    .arch-arrow { font-size: 28px; color: #939DA7; padding: 0 8px; flex-shrink: 0; }
+
+    /* フロー図 */
+    .flow { display: flex; flex-direction: column; gap: 0; align-items: center; }
+    .flow-step { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 700px; }
+    .flow-num { width: 36px; height: 36px; border-radius: 50%; background: #2A9BA1; color: white; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; flex-shrink: 0; }
+    .flow-content { flex: 1; background: white; border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px 16px; }
+    .flow-content .actor { font-size: 11px; color: #2A9BA1; font-weight: bold; }
+    .flow-content .action { font-size: 14px; margin-top: 2px; }
+    .flow-connector { width: 2px; height: 20px; background: #94CDD0; margin-left: 17px; }
+
+    /* シーケンス図 */
+    .seq { width: 100%; min-width: 600px; }
+    .seq-header { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+    .seq-actor { text-align: center; padding: 10px; border-radius: 6px; font-weight: bold; font-size: 13px; }
+    .seq-lines { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px; position: relative; }
+    .seq-line { border-left: 2px dashed #ccc; height: 100%; margin: 0 auto; }
+    .seq-msg { position: relative; padding: 8px 0; }
+    .seq-msg-row { display: flex; align-items: center; margin: 6px 0; padding: 4px 0; }
+    .seq-msg-arrow { flex: 1; height: 2px; position: relative; }
+    .seq-msg-arrow::after { content: ""; position: absolute; right: -1px; top: -4px; border: 5px solid transparent; border-left: 8px solid; }
+    .seq-msg-label { font-size: 12px; text-align: center; padding: 4px 8px; background: #f8f8f8; border-radius: 4px; white-space: nowrap; }
+
+    /* ファイル構成 */
+    .tree { font-family: "SF Mono", Monaco, Consolas, monospace; font-size: 13px; background: #1e1e1e; color: #d4d4d4; padding: 20px 24px; border-radius: 8px; line-height: 1.8; }
+    .tree .dir { color: #94CDD0; }
+    .tree .file { color: #d4d4d4; }
+    .tree .comment { color: #6a9955; }
+
+    footer { margin-top: 60px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #939DA7; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>HTML Host — 要件定義・概要設計</h1>
+  <p>社内向けHTMLホスティング基盤。Claude Code で生成したHTMLを Google Drive にアップロードし、GAS Web App 経由で社内メンバーに配信する。</p>
+
+  <!-- ===== 1. 要件定義 ===== -->
+  <h2>1. 要件定義</h2>
+
+  <h3>1-1. 背景・目的</h3>
+  <table>
+    <tr><th style="width:140px">項目</th><th>内容</th></tr>
+    <tr><td>課題</td><td>Claude Code で生成した HTML レポート・ダッシュボードを社内共有する手段がない（ローカルファイルを都度共有するのは非効率）</td></tr>
+    <tr><td>解決策</td><td>GAS Web App + Google Drive で社内 HTML ホスティング基盤を構築し、CLI から1コマンドでデプロイ&共有可能にする</td></tr>
+    <tr><td>対象ユーザー</td><td>SalesNow 社内メンバー（Google Workspace 認証必須）</td></tr>
+  </table>
+
+  <h3>1-2. 機能要件</h3>
+  <table>
+    <tr><th style="width:40px">#</th><th>機能</th><th>説明</th><th style="width:80px">状態</th></tr>
+    <tr><td>F1</td><td>HTML アップロード</td><td>CLI（Claude Code）から HTML ファイルを Google Drive にアップロード。同名ファイルは上書き</td><td><span class="badge badge-done">完了</span></td></tr>
+    <tr><td>F2</td><td>ページ配信</td><td><code>?page=xxx</code> で指定ページの HTML をブラウザに配信</td><td><span class="badge badge-done">完了</span></td></tr>
+    <tr><td>F3</td><td>一覧表示</td><td>Web App トップにデプロイ済みページ一覧を表示</td><td><span class="badge badge-done">完了</span></td></tr>
+    <tr><td>F4</td><td>ページ削除</td><td>CLI または GAS エディタから指定ページを削除</td><td><span class="badge badge-done">完了</span></td></tr>
+    <tr><td>F5</td><td>deploy-html スキル</td><td><code>/deploy-html</code> で Claude Code から1コマンドデプロイ</td><td><span class="badge badge-todo">未着手</span></td></tr>
+    <tr><td>F6</td><td>トークン自動リフレッシュ</td><td>OAuth トークン期限切れ時に自動でリフレッシュ</td><td><span class="badge badge-done">完了</span></td></tr>
+  </table>
+
+  <h3>1-3. 非機能要件</h3>
+  <table>
+    <tr><th style="width:140px">項目</th><th>要件</th></tr>
+    <tr><td>認証</td><td>Web App は Google Workspace ドメイン認証（組織内のみ閲覧可）</td></tr>
+    <tr><td>セキュリティ</td><td>Drive API アクセスは OAuth 2.0 トークン。トークンファイルは .gitignore 対象</td></tr>
+    <tr><td>サイズ制限</td><td>GAS HtmlService の上限: 約 500KB / ページ</td></tr>
+    <tr><td>可用性</td><td>Google インフラ依存（SLA 99.9%）</td></tr>
+  </table>
+
+  <h3>1-4. スコープ外</h3>
+  <table>
+    <tr><th>除外項目</th><th>理由</th></tr>
+    <tr><td>カスタムドメイン</td><td>GAS Web App はカスタムドメイン非対応</td></tr>
+    <tr><td>外部公開</td><td>Workspace 管理者が外部アクセスを制限済み</td></tr>
+    <tr><td>doPost（HTTP POST）</td><td>Workspace 管理者制限により curl からのアクセス不可。Drive API で代替</td></tr>
+  </table>
+
+  <!-- ===== 2. アーキテクチャ ===== -->
+  <h2>2. システムアーキテクチャ</h2>
+
+  <div class="diagram">
+    <div class="diagram-title">全体構成図</div>
+    <div class="arch">
+      <div class="arch-box arch-cli">
+        <div class="label">CLI</div>
+        <div class="name">Claude Code</div>
+        <div class="detail">/deploy-html スキル</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-api">
+        <div class="label">API</div>
+        <div class="name">Google Drive API v3</div>
+        <div class="detail">OAuth 2.0 認証</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-drive">
+        <div class="label">ストレージ</div>
+        <div class="name">共有ドライブ</div>
+        <div class="detail">HTML共有フォルダ</div>
+      </div>
+      <div class="arch-arrow">←</div>
+      <div class="arch-box arch-gas">
+        <div class="label">配信</div>
+        <div class="name">GAS Web App</div>
+        <div class="detail">doGet で HTML 配信</div>
+      </div>
+      <div class="arch-arrow">→</div>
+      <div class="arch-box arch-user">
+        <div class="label">閲覧者</div>
+        <div class="name">社内メンバー</div>
+        <div class="detail">ブラウザでアクセス</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>ポイント:</strong> アップロードと配信が分離されている。アップロードは Drive API（OAuth トークン）、配信は GAS Web App（Workspace 認証）。それぞれ独立した認証メカニズム。
+  </div>
+
+  <!-- ===== 3. デプロイフロー ===== -->
+  <h2>3. デプロイフロー</h2>
+
+  <div class="diagram">
+    <div class="diagram-title">HTML デプロイの流れ（/deploy-html 実行時）</div>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-num">1</div>
+        <div class="flow-content">
+          <div class="actor">Claude Code</div>
+          <div class="action">HTML ファイルを生成（レポート、ダッシュボード等）</div>
+        </div>
+      </div>
+      <div class="flow-connector"></div>
+      <div class="flow-step">
+        <div class="flow-num">2</div>
+        <div class="flow-content">
+          <div class="actor">deploy-html スキル</div>
+          <div class="action">OAuth トークンを確認（期限切れならリフレッシュ）</div>
+        </div>
+      </div>
+      <div class="flow-connector"></div>
+      <div class="flow-step">
+        <div class="flow-num">3</div>
+        <div class="flow-content">
+          <div class="actor">deploy-html スキル</div>
+          <div class="action">共有ドライブ内の同名ファイルを検索し、あればゴミ箱へ移動</div>
+        </div>
+      </div>
+      <div class="flow-connector"></div>
+      <div class="flow-step">
+        <div class="flow-num">4</div>
+        <div class="flow-content">
+          <div class="actor">Google Drive API v3</div>
+          <div class="action">HTML ファイルを共有ドライブのフォルダにアップロード（multipart upload）</div>
+        </div>
+      </div>
+      <div class="flow-connector"></div>
+      <div class="flow-step">
+        <div class="flow-num">5</div>
+        <div class="flow-content">
+          <div class="actor">deploy-html スキル</div>
+          <div class="action">公開 URL を生成して返却:<br><code>https://script.google.com/a/macros/salesnow.jp/s/...exec?page=ページ名</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 4. ファイル構成 ===== -->
+  <h2>4. ファイル構成</h2>
+
+  <div class="diagram">
+    <div class="tree">
+<span class="dir">~/Claude/shared/html-host/</span>
+├── <span class="file">.clasp.json</span>          <span class="comment"># GAS プロジェクト紐付け</span>
+├── <span class="file">appsscript.json</span>      <span class="comment"># GAS マニフェスト（スコープ・デプロイ設定）</span>
+├── <span class="file">Code.gs</span>              <span class="comment"># GAS メインコード（doGet / uploadHtml / listPages 等）</span>
+├── <span class="file">creds.json</span>           <span class="comment"># GCP OAuth クライアント認証情報</span>
+├── <span class="file">.token.json</span>          <span class="comment"># OAuth トークン（access_token + refresh_token）※ .gitignore</span>
+├── <span class="file">get-token.sh</span>         <span class="comment"># トークン取得・リフレッシュスクリプト</span>
+└── <span class="dir">docs/</span>
+    └── <span class="file">architecture.html</span> <span class="comment"># 本ドキュメント</span>
+
+<span class="dir">~/.claude/skills/</span>
+└── <span class="file">deploy-html.md</span>       <span class="comment"># Claude Code スキル定義 ※ 未作成</span>
+
+<span class="dir">Google Drive（共有ドライブ）</span>
+└── <span class="dir">HTML共有/</span>             <span class="comment"># FOLDER_ID: 1vAwKrWHq-jpaNYBXci4NuI1FguSrPr0_</span>
+    ├── <span class="file">test.html</span>         <span class="comment"># テストページ</span>
+    └── <span class="file">xxx.html</span>          <span class="comment"># デプロイされたページ群</span>
+
+<span class="dir">GAS Web App</span>
+└── <span class="comment"># デプロイ ID: AKfycbyZX4YeOCOOcnQAGMhduX0qh88iunW8GbG_He35ekURBqooGQO2DnpdM2na2Wf6tElYnA</span>
+    </div>
+  </div>
+
+  <!-- ===== 5. 認証・セキュリティ ===== -->
+  <h2>5. 認証・セキュリティ設計</h2>
+
+  <div class="diagram">
+    <div class="diagram-title">認証フロー</div>
+    <table>
+      <tr><th style="width:160px">経路</th><th>認証方式</th><th>スコープ</th><th>備考</th></tr>
+      <tr>
+        <td><strong>CLI → Drive API</strong></td>
+        <td>OAuth 2.0（.token.json）</td>
+        <td>drive, script.external_request</td>
+        <td>refresh_token で自動更新。GCPプロジェクト: 354900204969</td>
+      </tr>
+      <tr>
+        <td><strong>ブラウザ → Web App</strong></td>
+        <td>Google Workspace SSO</td>
+        <td>—</td>
+        <td>salesnow.jp ドメインのみアクセス可</td>
+      </tr>
+      <tr>
+        <td><strong>Web App → Drive</strong></td>
+        <td>GAS 実行ユーザー権限</td>
+        <td>drive</td>
+        <td>デプロイ設定「自分として実行」</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="warn">
+    <strong>制約:</strong> Google Workspace 管理者設定により、GAS Web App への外部（匿名）アクセスは不可。そのため doPost（curl からの直接呼び出し）は使えず、Drive API 経由でアップロードする構成に変更。
+  </div>
+
+  <!-- ===== 6. deploy-html スキル設計 ===== -->
+  <h2>6. /deploy-html スキル設計</h2>
+
+  <h3>6-1. 入出力</h3>
+  <table>
+    <tr><th style="width:80px">方向</th><th>項目</th><th>説明</th></tr>
+    <tr><td>入力</td><td>HTML ファイルパス</td><td>デプロイ対象の HTML ファイル（絶対パス）</td></tr>
+    <tr><td>入力</td><td>ページ名（任意）</td><td>省略時はファイル名から拡張子を除いた名前</td></tr>
+    <tr><td>出力</td><td>公開 URL</td><td>Web App の閲覧 URL</td></tr>
+  </table>
+
+  <h3>6-2. 処理ステップ</h3>
+  <table>
+    <tr><th style="width:40px">#</th><th>処理</th><th>使用ツール</th></tr>
+    <tr><td>1</td><td>トークンリフレッシュ（期限切れ時）</td><td>curl → Google OAuth API</td></tr>
+    <tr><td>2</td><td>同名ファイルの検索・削除（上書き対応）</td><td>curl → Drive API v3 (files.list / files.update)</td></tr>
+    <tr><td>3</td><td>HTML ファイルアップロード</td><td>curl → Drive API v3 (files.create, multipart)</td></tr>
+    <tr><td>4</td><td>公開 URL の生成・返却</td><td>—</td></tr>
+  </table>
+
+  <h3>6-3. エラーハンドリング</h3>
+  <table>
+    <tr><th>エラー</th><th>対処</th></tr>
+    <tr><td>トークン期限切れ (401)</td><td>refresh_token で自動リフレッシュ → リトライ</td></tr>
+    <tr><td>ファイルサイズ超過</td><td>警告を表示（GAS HtmlService 上限 ~500KB）</td></tr>
+    <tr><td>ネットワークエラー</td><td>リトライ（最大2回）</td></tr>
+  </table>
+
+  <!-- ===== 7. 今後の対応 ===== -->
+  <h2>7. 残タスク</h2>
+
+  <table>
+    <tr><th style="width:40px">#</th><th>タスク</th><th>優先度</th><th style="width:80px">状態</th></tr>
+    <tr><td>1</td><td><code>/deploy-html</code> スキルファイル作成（~/.claude/skills/deploy-html.md）</td><td>高</td><td><span class="badge badge-todo">未着手</span></td></tr>
+    <tr><td>2</td><td>テストファイル（test.html）の削除</td><td>低</td><td><span class="badge badge-todo">未着手</span></td></tr>
+    <tr><td>3</td><td>マイドライブの不要ファイル（test-htmlhost.html）削除</td><td>低</td><td><span class="badge badge-todo">未着手</span></td></tr>
+    <tr><td>4</td><td>.gitignore に .token.json を追加</td><td>中</td><td><span class="badge badge-todo">未着手</span></td></tr>
+    <tr><td>5</td><td>auto memory にプロジェクト情報を記録</td><td>中</td><td><span class="badge badge-todo">未着手</span></td></tr>
+  </table>
+
+  <footer>
+    HTML Host — SalesNow 社内 HTML ホスティング基盤 | 2026-03-11 作成
+  </footer>
+
+</div>
+</body>
+</html>
