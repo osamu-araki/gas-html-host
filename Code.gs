@@ -1,9 +1,11 @@
-// Version: 2.2.0 | Updated: 2026-03-11
+// Version: 2.7.0 | Updated: 2026-03-12
+// [2026-03-12] v2.7.0: doPost に update-metadata アクション追加（スキルからメモ・投稿者自動登録）
 // HTML社内公開ホスティング基盤
 // GAS Web App として動作し、Google Drive 上のHTMLファイルを配信する
 // [2026-03-11] v2.0.0: 履歴管理・投稿者・メモ・Driveインポート・ページネーション・プレビュー追加
 // [2026-03-11] v2.1.0: 高速化(メタデータベース一覧+キャッシュ)・Driveフォルダ読み込みボタン・ファビコン
 // [2026-03-11] v2.2.0: 白画面修正・スキル化ガイド・プレビューキャッシュ
+// [2026-03-11] v2.3.0: プレビューモーダルの最大化ボタン・リサイズ対応
 
 const FOLDER_ID = PropertiesService.getScriptProperties().getProperty('FOLDER_ID');
 const ITEMS_PER_PAGE = 100;
@@ -55,6 +57,13 @@ function doPost(e) {
 
       case 'list':
         return jsonResponse_(listPages());
+
+      // [2026-03-12] スキルからメモ・投稿者の自動登録用
+      case 'update-metadata':
+        if (!data.name) {
+          return jsonResponse_({ success: false, error: 'name は必須です' });
+        }
+        return jsonResponse_(updatePageMetadata_(data.name, data.memo, data.author));
 
       default:
         return jsonResponse_({ success: false, error: '不明なaction: ' + data.action });
@@ -198,6 +207,7 @@ function deleteHtml(name) {
 /**
  * ページ一覧を取得（メタデータベース・高速版）
  * [2026-03-11] Drive ファイル走査を廃止し、メタデータから一覧を生成
+ * [2026-03-12] キャッシュミス時にDriveフォルダの未登録ファイルを自動検出・登録
  */
 function listPages() {
   // キャッシュチェック（60秒）
@@ -206,6 +216,9 @@ function listPages() {
   if (cached) {
     try { return JSON.parse(cached); } catch (e) { /* fall through */ }
   }
+
+  // キャッシュがない場合、未登録ファイルを自動検出して登録
+  autoRegisterNewFiles_();
 
   var metadata = getMetadata_();
   var pages = [];
@@ -233,6 +246,46 @@ function listPages() {
   var result = { pages: pages, total: pages.length };
   cache.put('pageList', JSON.stringify(result), 60);
   return result;
+}
+
+/**
+ * [2026-03-12] Driveフォルダ内の未登録HTMLファイルを自動検出してメタデータに登録
+ * listPages() のキャッシュミス時に呼ばれる（最大60秒に1回）
+ */
+function autoRegisterNewFiles_() {
+  var folder = DriveApp.getFolderById(FOLDER_ID);
+  var files = folder.getFilesByType(MimeType.HTML);
+  var metadata = getMetadata_();
+  var added = false;
+  var now = new Date().toISOString();
+
+  while (files.hasNext()) {
+    var file = files.next();
+    var rawName = file.getName();
+    if (/_v\d+\.html$/.test(rawName)) continue;
+    var name = rawName.replace(/\.html$/, '');
+    if (metadata.pages[name]) continue;
+
+    var owner = '';
+    try { owner = file.getOwner() ? file.getOwner().getEmail() : ''; } catch (e) { owner = ''; }
+
+    metadata.pages[name] = {
+      author: owner,
+      memo: '',
+      currentVersion: 1,
+      versions: [{
+        version: 1,
+        date: now,
+        author: owner,
+        size: file.getSize()
+      }]
+    };
+    added = true;
+  }
+
+  if (added) {
+    saveMetadata_(metadata);
+  }
 }
 
 /**
@@ -315,6 +368,50 @@ function prefetchContentToCache_(pages) {
 }
 
 /**
+ * [2026-03-11] 本文検索 — HTMLコンテンツ内をキーワードで検索し、マッチしたページ名を返す
+ * タグを除去したテキストで検索するため、HTMLタグはヒットしない
+ * @param {string} query - 検索キーワード
+ * @return {Object} { success: true, matches: ["page1", "page2", ...] }
+ */
+function searchContent(query) {
+  if (!query || query.length < 2) {
+    return { success: true, matches: [] };
+  }
+
+  var folder = DriveApp.getFolderById(FOLDER_ID);
+  var metadata = getMetadata_();
+  var matches = [];
+  var q = query.toLowerCase();
+
+  for (var name in metadata.pages) {
+    // まずCacheServiceから取得を試みる
+    var cache = CacheService.getScriptCache();
+    var cacheKey = 'content_' + name;
+    var content = cache.get(cacheKey);
+
+    if (!content) {
+      try {
+        var files = folder.getFilesByName(name + '.html');
+        if (!files.hasNext()) continue;
+        content = files.next().getBlob().getDataAsString();
+        // キャッシュに保存（100KB未満のみ）
+        if (content.length < 100000) {
+          cache.put(cacheKey, content, 300);
+        }
+      } catch (e) { continue; }
+    }
+
+    // HTMLタグを除去してテキストのみで検索
+    var text = content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').toLowerCase();
+    if (text.indexOf(q) >= 0) {
+      matches.push(name);
+    }
+  }
+
+  return { success: true, matches: matches };
+}
+
+/**
  * メモを更新
  */
 function updateMemo(name, memo) {
@@ -323,6 +420,31 @@ function updateMemo(name, memo) {
     return { success: false, error: 'ページが見つかりません' };
   }
   metadata.pages[name].memo = memo;
+  saveMetadata_(metadata);
+  invalidateCache_();
+  return { success: true, name: name };
+}
+
+/**
+ * [2026-03-12] ページのメタデータ（メモ・投稿者）を更新
+ * スキルからのデプロイ時に呼ばれる
+ */
+function updatePageMetadata_(name, memo, author) {
+  const metadata = getMetadata_();
+  if (!metadata.pages[name]) {
+    return { success: false, error: 'ページが見つかりません' };
+  }
+  var page = metadata.pages[name];
+  if (memo !== undefined && memo !== null) {
+    page.memo = memo;
+  }
+  if (author !== undefined && author !== null && author !== '') {
+    page.author = author;
+    // 最新バージョンの投稿者も更新
+    if (page.versions && page.versions.length > 0) {
+      page.versions[page.versions.length - 1].author = author;
+    }
+  }
   saveMetadata_(metadata);
   invalidateCache_();
   return { success: true, name: name };
@@ -486,20 +608,29 @@ function createIndexPage_(pageNum) {
   html += '<div class="msg msg-success" id="successMsg"></div>';
   html += '<div class="msg msg-error" id="errorMsg"></div>';
 
-  // ページ一覧
-  html += '<h2>公開ページ一覧';
+  // [2026-03-11] ページ一覧 + キーワード検索
+  html += '<div class="list-header">';
+  html += '<h2 style="margin:0">公開ページ一覧';
   if (allPages.length > 0) {
-    html += ' <span class="count">(' + allPages.length + '件)</span>';
+    html += ' <span class="count" id="pageCount">(' + allPages.length + '件)</span>';
   }
   html += '</h2>';
+  if (displayPages.length > 0) {
+    html += '<div style="position:relative;display:inline-block">';
+    html += '<input type="text" id="searchInput" class="search-input" placeholder="ページ名・投稿者・メモ・本文で検索..." oninput="filterTable()">';
+    html += '<span id="searchStatus" class="search-status"></span>';
+    html += '</div>';
+  }
+  html += '</div>';
 
   if (displayPages.length === 0) {
     html += '<p class="empty">公開ページはまだありません。</p>';
   } else {
-    html += '<table><tr><th>ページ名</th><th>投稿者</th><th>メモ</th><th>Ver</th><th>最終更新</th><th>サイズ</th><th>操作</th></tr>';
+    html += '<table id="pageTable"><tr><th>ページ名</th><th>投稿者</th><th>メモ</th><th>Ver</th><th>最終更新</th><th>サイズ</th><th>操作</th></tr>';
     displayPages.forEach(function(page) {
       var date = new Date(page.lastUpdated);
-      var dateStr = date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate();
+      // [2026-03-11] 分単位まで表示
+      var dateStr = date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate() + ' ' + date.getHours() + ':' + ('0' + date.getMinutes()).slice(-2);
       var sizeKb = (page.size / 1024).toFixed(1) + ' KB';
       var safeName = page.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
       var safeMemo = (page.memo || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
@@ -614,6 +745,12 @@ function buildStyles_() {
     '.drive-import { background: #f8f8fc; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-top: 12px; }',
     '.drive-import .form-row { margin-top: 8px; }',
 
+    // [2026-03-11] 検索バー + 一覧ヘッダー
+    '.list-header { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; gap: 16px; flex-wrap: wrap; }',
+    '.search-input { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 280px; }',
+    '.search-input:focus { outline: none; border-color: #2A9BA1; box-shadow: 0 0 0 2px rgba(42,155,161,0.15); }',
+    '.search-status { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #939DA7; }',
+
     // ページネーション
     '.pagination { margin-top: 24px; text-align: center; }',
     '.pagination .page-link, .pagination .page-current { display: inline-block; padding: 6px 12px; margin: 0 2px; border-radius: 4px; }',
@@ -624,11 +761,19 @@ function buildStyles_() {
     // モーダル
     '.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }',
     '.modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 8px; width: 90%; max-width: 900px; max-height: 85vh; z-index: 1001; display: flex; flex-direction: column; }',
+    // [2026-03-11] プレビューモーダルはリサイズ可能
+    '.modal-preview { resize: both; overflow: hidden; min-width: 400px; min-height: 300px; }',
+    '.modal-preview.maximized { top: 2%; left: 2%; width: 96% !important; height: 96% !important; max-width: none !important; max-height: none !important; transform: none !important; border-radius: 4px; }',
     '.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }',
-    '.modal-header h3 { margin: 0; font-size: 16px; }',
+    '.modal-header h3 { margin: 0; font-size: 16px; flex: 1; }',
+    '.modal-header-btns { display: flex; align-items: center; gap: 8px; }',
     '.modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0 4px; }',
+    '.modal-close:hover { color: #333; }',
+    '.btn-maximize { background: none; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; color: #666; padding: 2px 8px; font-size: 16px; line-height: 1; }',
+    '.btn-maximize:hover { background: #f0f9fa; border-color: #2A9BA1; color: #2A9BA1; }',
     '.modal-body { padding: 20px; overflow-y: auto; flex: 1; }',
-    '.modal-body iframe { width: 100%; height: 60vh; border: 1px solid #eee; border-radius: 4px; }',
+    '.modal-body iframe { width: 100%; height: 100%; min-height: 60vh; border: 1px solid #eee; border-radius: 4px; }',
+    '.maximized .modal-body iframe { min-height: 0; }',
 
     // 履歴テーブル
     '.history-table { width: 100%; border-collapse: collapse; font-size: 14px; }',
@@ -728,13 +873,15 @@ function buildDriveImportSection_() {
 function buildModals_() {
   var html = '';
 
-  // プレビューモーダル
+  // [2026-03-11] プレビューモーダル（最大化・リサイズ対応）
   html += '<div class="modal-overlay" id="previewOverlay" onclick="closePreview()">';
-  html += '<div class="modal" onclick="event.stopPropagation()">';
+  html += '<div class="modal modal-preview" id="previewModal" onclick="event.stopPropagation()">';
   html += '<div class="modal-header">';
   html += '<h3 id="previewTitle">プレビュー</h3>';
+  html += '<div class="modal-header-btns">';
+  html += '<button class="btn-maximize" id="maximizeBtn" onclick="toggleMaximize()" title="最大化/元に戻す">&#9634;</button>';
   html += '<button class="modal-close" onclick="closePreview()">&times;</button>';
-  html += '</div>';
+  html += '</div></div>';
   html += '<div class="modal-body" id="previewBody"></div>';
   html += '</div></div>';
 
@@ -772,6 +919,14 @@ function buildScript_(baseUrl) {
   // [2026-03-11] ベースURL（リダイレクト用）
   js += 'var BASE_URL = "' + baseUrl + '";';
 
+  // [2026-03-11] GAS iframe内からのリダイレクト（target="_top"で親フレームをナビゲート）
+  js += 'function goTop() {';
+  js += '  var link = "<a href=\\"" + BASE_URL + "\\" target=\\"_top\\" style=\\"color:#155724;text-decoration:underline;margin-left:8px\\">トップに戻る</a>";';
+  js += '  var el = document.getElementById("successMsg");';
+  js += '  el.innerHTML = el.textContent + link;';
+  js += '  try { window.open(BASE_URL, "_top"); } catch(e) {}';
+  js += '}';
+
   // プレビューキャッシュ（クライアント側）
   js += 'var previewCache = {};';
 
@@ -802,7 +957,7 @@ function buildScript_(baseUrl) {
   js += '  if (!name) { showMsg("error", "ページ名を入力してください"); return; }';
   js += '  setUploading(true);';
   js += '  google.script.run.withSuccessHandler(function(r) {';
-  js += '    if (r.success) { showMsg("success", r.name + " v" + r.version + " をアップロードしました"); setTimeout(function() { window.location.href = BASE_URL; }, 1500); }';
+  js += '    if (r.success) { showMsg("success", r.name + " v" + r.version + " をアップロードしました"); setTimeout(function() { goTop(); }, 1500); }';
   js += '    else { showMsg("error", r.error); setUploading(false); }';
   js += '  }).withFailureHandler(function(e) { showMsg("error", e.message); setUploading(false); }).uploadHtml(name, fileContent, memo);';
   js += '}';
@@ -833,7 +988,7 @@ function buildScript_(baseUrl) {
   js += '    if (r.count === 0) { res.innerHTML = "<span style=\\"color:#939DA7\\">未登録のHTMLファイルはありませんでした。</span>"; return; }';
   js += '    var names = r.imported.map(function(f) { return f.name; }).join(", ");';
   js += '    showMsg("success", r.count + "件を読み込みました: " + names);';
-  js += '    setTimeout(function() { window.location.href = BASE_URL; }, 1500);';
+  js += '    setTimeout(function() { goTop(); }, 1500);';
   js += '  }).withFailureHandler(function(e) { btn.disabled = false; btn.textContent = "Drive フォルダをスキャン"; showMsg("error", e.message); }).scanAndImportDriveFiles();';
   js += '}';
 
@@ -855,7 +1010,15 @@ function buildScript_(baseUrl) {
   js += '    else { document.getElementById("previewBody").innerHTML = "<p>エラー: " + r.error + "</p>"; }';
   js += '  }).withFailureHandler(function(e) { document.getElementById("previewBody").innerHTML = "<p>エラー: " + e.message + "</p>"; }).getPageContent(name);';
   js += '}';
-  js += 'function closePreview() { document.getElementById("previewOverlay").style.display = "none"; document.getElementById("previewBody").innerHTML = ""; }';
+  js += 'function closePreview() { document.getElementById("previewOverlay").style.display = "none"; document.getElementById("previewBody").innerHTML = ""; var m = document.getElementById("previewModal"); m.classList.remove("maximized"); m.style.width = ""; m.style.height = ""; }';
+
+  // [2026-03-11] 最大化トグル
+  js += 'function toggleMaximize() {';
+  js += '  var m = document.getElementById("previewModal");';
+  js += '  var isMax = m.classList.toggle("maximized");';
+  js += '  if (isMax) { m.style.width = ""; m.style.height = ""; }';
+  js += '  document.getElementById("maximizeBtn").innerHTML = isMax ? "&#9645;" : "&#9634;";';
+  js += '}';
 
   // 履歴
   js += 'function showHistory(name) {';
@@ -888,7 +1051,7 @@ function buildScript_(baseUrl) {
   js += 'function restoreVer(name, ver) {';
   js += '  if (!confirm("v" + ver + " を復元しますか？")) return;';
   js += '  google.script.run.withSuccessHandler(function(r) {';
-  js += '    if (r.success) { showMsg("success", name + " を v" + ver + " から復元しました"); closeHistory(); setTimeout(function() { window.location.href = BASE_URL; }, 1500); }';
+  js += '    if (r.success) { showMsg("success", name + " を v" + ver + " から復元しました"); closeHistory(); setTimeout(function() { goTop(); }, 1500); }';
   js += '    else { showMsg("error", r.error); }';
   js += '  }).withFailureHandler(function(e) { showMsg("error", e.message); }).restoreVersion(name, ver);';
   js += '}';
@@ -920,6 +1083,59 @@ function buildScript_(baseUrl) {
   js += '  var el = document.getElementById(type === "success" ? "successMsg" : "errorMsg");';
   js += '  el.textContent = text; el.style.display = "block";';
   js += '  setTimeout(function() { el.style.display = "none"; }, 5000);';
+  js += '}';
+
+  // [2026-03-11] キーワード検索フィルタ（ページ名・投稿者・メモ+本文）
+  js += 'var searchTimer = null;';
+  js += 'var contentMatches = {};';  // 本文検索の結果をキャッシュ
+
+  // クライアント側フィルタ（即座）+ 本文検索（デバウンス）
+  js += 'function filterTable() {';
+  js += '  var q = document.getElementById("searchInput").value.toLowerCase();';
+  js += '  applyFilter(q);';
+  js += '  clearTimeout(searchTimer);';
+  js += '  if (q.length >= 2) {';
+  js += '    document.getElementById("searchStatus").textContent = "本文検索中...";';
+  js += '    searchTimer = setTimeout(function() { doContentSearch(q); }, 500);';
+  js += '  } else {';
+  js += '    document.getElementById("searchStatus").textContent = "";';
+  js += '    contentMatches = {};';
+  js += '  }';
+  js += '}';
+
+  // テーブルフィルタ適用（名前・投稿者・メモ + contentMatches）
+  js += 'function applyFilter(q) {';
+  js += '  var table = document.getElementById("pageTable");';
+  js += '  if (!table) return;';
+  js += '  var rows = table.querySelectorAll("tr");';
+  js += '  var visible = 0;';
+  js += '  for (var i = 1; i < rows.length; i++) {';
+  js += '    var cells = rows[i].querySelectorAll("td");';
+  js += '    var name = cells[0] ? cells[0].textContent.toLowerCase() : "";';
+  js += '    var author = cells[1] ? cells[1].textContent.toLowerCase() : "";';
+  js += '    var memo = cells[2] ? cells[2].textContent.toLowerCase() : "";';
+  js += '    var localMatch = name.indexOf(q) >= 0 || author.indexOf(q) >= 0 || memo.indexOf(q) >= 0;';
+  js += '    var bodyMatch = contentMatches[cells[0] ? cells[0].textContent : ""] || false;';
+  js += '    var match = !q || localMatch || bodyMatch;';
+  js += '    rows[i].style.display = match ? "" : "none";';
+  js += '    if (match) visible++;';
+  js += '  }';
+  js += '  var countEl = document.getElementById("pageCount");';
+  js += '  if (countEl) countEl.textContent = "(" + visible + "件)";';
+  js += '}';
+
+  // サーバーサイド本文検索
+  js += 'function doContentSearch(q) {';
+  js += '  google.script.run.withSuccessHandler(function(r) {';
+  js += '    document.getElementById("searchStatus").textContent = "";';
+  js += '    if (!r.success) return;';
+  js += '    contentMatches = {};';
+  js += '    r.matches.forEach(function(name) { contentMatches[name] = true; });';
+  js += '    var currentQ = document.getElementById("searchInput").value.toLowerCase();';
+  js += '    applyFilter(currentQ);';
+  js += '  }).withFailureHandler(function() {';
+  js += '    document.getElementById("searchStatus").textContent = "";';
+  js += '  }).searchContent(q);';
   js += '}';
 
   // ESCキーでモーダルを閉じる
