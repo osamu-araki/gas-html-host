@@ -1,4 +1,5 @@
-// Version: 2.7.1 | Updated: 2026-03-12
+// Version: 2.7.2 | Updated: 2026-03-12
+// [2026-03-12] v2.7.2: メモ欄にtitle属性追加（マウスオーバーで全文表示）
 // [2026-03-12] v2.7.1: updatePageMetadata_ を upsert 化（ページ未登録時は自動作成）
 // [2026-03-12] v2.7.0: doPost に update-metadata アクション追加（スキルからメモ・投稿者自動登録）
 // HTML社内公開ホスティング基盤
@@ -660,7 +661,8 @@ function createIndexPage_(pageNum) {
       html += '<td><a href="' + baseUrl + '?page=' + encodeURIComponent(page.name) + '" target="_blank">' + escapeHtml_(page.name) + '</a></td>';
       html += '<td class="author">' + escapeHtml_(page.author ? page.author.split('@')[0] : '') + '</td>';
       html += '<td class="memo-cell">';
-      html += '<span class="memo-text" id="memo-' + page.name + '">' + escapeHtml_(page.memo || '') + '</span>';
+      // [2026-03-12] title属性でマウスオーバー時に全文表示
+      html += '<span class="memo-text" id="memo-' + page.name + '" title="' + escapeHtml_(page.memo || '') + '">' + escapeHtml_(page.memo || '') + '</span>';
       html += '<button class="btn-icon" onclick="editMemo(\'' + safeName + '\', \'' + safeMemo + '\')" title="メモ編集">&#9998;</button>';
       html += '</td>';
       html += '<td class="ver-cell">';
@@ -818,8 +820,8 @@ function buildGuideSection_() {
   html += '<li><b>Driveから読み込む</b>: 対象の共有Driveフォルダに直接HTMLファイルを置き、「スキャン」ボタンを押すと未登録ファイルが自動で読み込まれます。投稿者はファイル所有者が自動設定されます。</li>';
   html += '<li><b>バージョン管理</b>: 同名ファイルを再アップロードすると、旧バージョンが自動保存されます。「履歴」から過去バージョンの閲覧・復元が可能です。</li>';
   html += '<li><b>プレビュー</b>: 一覧の「プレビュー」ボタンでページ内容を確認できます。</li>';
-  html += '<li><b>メモ</b>: 各ページに説明メモを追加・編集できます。</li>';
-  html += '<li><b>CLI デプロイ</b>: Claude Code の <code>/deploy-html</code> スキルでコマンドラインからもデプロイ可能です。</li>';
+  html += '<li><b>メモ</b>: 各ページに説明メモを追加・編集できます。CLIデプロイ時はHTMLの内容から概要が自動生成されます。</li>';
+  html += '<li><b>CLI デプロイ</b>: Claude Code の <code>/deploy-html</code> スキルでコマンドラインからもデプロイ可能です。メモ・投稿者が自動登録されます。</li>';
   html += '</ul>';
 
   // Claude Code スキル化ガイド
