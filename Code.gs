@@ -1,4 +1,5 @@
-// Version: 2.8.0 | Updated: 2026-03-13
+// Version: 2.8.1 | Updated: 2026-03-13
+// [2026-03-13] v2.8.1: srcdoc方式に修正（GAS iframe制約回避）+ google.script.runでページ切替
 // [2026-03-13] v2.8.0: iframe ナビゲーションラッパー追加（ナビバー+ドロワー+プリフェッチ+全画面）
 // [2026-03-12] v2.7.2: メモ欄にtitle属性追加（マウスオーバーで全文表示）
 // [2026-03-12] v2.7.1: updatePageMetadata_ を upsert 化（ページ未登録時は自動作成）
@@ -548,6 +549,24 @@ function setup(folderId) {
   return { success: true, folderId: folderId };
 }
 
+// [2026-03-13] ページ内容を取得（ナビラッパーからのページ切替用）
+function getPageContent(pageName) {
+  // キャッシュチェック
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'content_' + pageName;
+  var cached = cache.get(cacheKey);
+  if (cached) return cached;
+
+  var folder = DriveApp.getFolderById(FOLDER_ID);
+  var files = folder.getFilesByName(pageName + '.html');
+  if (!files.hasNext()) return null;
+  var content = files.next().getBlob().getDataAsString();
+  if (content.length < 100000) {
+    cache.put(cacheKey, content, 300);
+  }
+  return content;
+}
+
 // ============================================================
 // プライベート関数
 // ============================================================
@@ -610,7 +629,7 @@ function serveWrappedPage_(pageName) {
     }
   }
 
-  // ページが存在するか確認
+  // ページの内容を読み込み（srcdoc用）
   var folder = DriveApp.getFolderById(FOLDER_ID);
   var files = folder.getFilesByName(pageName + '.html');
   if (!files.hasNext()) {
@@ -618,6 +637,11 @@ function serveWrappedPage_(pageName) {
       '<h1>404 - ページが見つかりません</h1><p><a href="' + baseUrl + '">一覧に戻る</a></p>'
     ).setTitle('Not Found');
   }
+
+  // [2026-03-13] GAS Web App は iframe src で別GAS URLを読めないため srcdoc を使用
+  var pageContent = files.next().getBlob().getDataAsString();
+  // srcdoc 内で使うため " をエスケープ
+  var srcdocContent = pageContent.replace(/"/g, '&quot;');
 
   // ページ一覧JSONを生成（ドロワー用）
   var pagesJson = JSON.stringify(allPages.map(function(p) {
@@ -630,7 +654,6 @@ function serveWrappedPage_(pageName) {
   }));
 
   var FI = FAVICON_B64_;
-  var iframeSrc = baseUrl + '?page=' + encodeURIComponent(pageName) + '&raw=1';
 
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
   html += '<meta name="viewport" content="width=device-width, initial-scale=1">';
@@ -672,8 +695,8 @@ function serveWrappedPage_(pageName) {
   html += '<div class="drawer-list" id="drawerList"></div>';
   html += '</div>';
 
-  // iframe
-  html += '<iframe class="content-frame" id="contentFrame" src="' + iframeSrc + '"></iframe>';
+  // iframe（srcdoc でHTMLを直接埋め込み — GAS同士のiframe読み込み制約を回避）
+  html += '<iframe class="content-frame" id="contentFrame" srcdoc="' + srcdocContent + '"></iframe>';
 
   // JavaScript
   html += '<script>';
@@ -795,13 +818,15 @@ function buildWrapperScript_() {
   js += '  document.getElementById("currentPageName").textContent=p.name;';
   js += '  document.getElementById("currentMemo").textContent=p.memo?"\\u2014 "+p.memo:"";';
   js += '  document.getElementById("rawLink").href=BASE_URL+"?page="+encodeURIComponent(p.name)+"&raw=1";';
-  js += '  document.getElementById("contentFrame").src=BASE_URL+"?page="+encodeURIComponent(p.name)+"&raw=1";';
   js += '  renderDrawer(document.getElementById("drawerSearch").value);';
   js += '  document.getElementById("drawer").classList.remove("open");';
   js += '  document.getElementById("drawerOverlay").classList.remove("open");';
   js += '  prefetchNearby(idx);';
-  // URL をブラウザ履歴に反映（GAS Web App の制約内で可能な範囲）
-  js += '  try{history.replaceState(null,"",BASE_URL+"?page="+encodeURIComponent(p.name))}catch(e){}';
+  // google.script.run でサーバーからHTMLを取得し srcdoc に設定
+  js += '  google.script.run.withSuccessHandler(function(content){';
+  js += '    if(content)document.getElementById("contentFrame").srcdoc=content;';
+  js += '    else document.getElementById("contentFrame").srcdoc="<h1>ページが見つかりません</h1>";';
+  js += '  }).getPageContent(p.name);';
   js += '}';
 
   // ナビゲーション
