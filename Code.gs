@@ -1,4 +1,5 @@
-// Version: 2.7.0 | Updated: 2026-03-12
+// Version: 2.7.1 | Updated: 2026-03-12
+// [2026-03-12] v2.7.1: updatePageMetadata_ を upsert 化（ページ未登録時は自動作成）
 // [2026-03-12] v2.7.0: doPost に update-metadata アクション追加（スキルからメモ・投稿者自動登録）
 // HTML社内公開ホスティング基盤
 // GAS Web App として動作し、Google Drive 上のHTMLファイルを配信する
@@ -426,13 +427,33 @@ function updateMemo(name, memo) {
 }
 
 /**
- * [2026-03-12] ページのメタデータ（メモ・投稿者）を更新
- * スキルからのデプロイ時に呼ばれる
+ * [2026-03-12] ページのメタデータ（メモ・投稿者）を更新（upsert）
+ * ページが未登録の場合は自動作成する（スキルからのDrive API直接アップロード対応）
  */
 function updatePageMetadata_(name, memo, author) {
   const metadata = getMetadata_();
+  // [2026-03-12] upsert: ページ未登録なら自動作成
   if (!metadata.pages[name]) {
-    return { success: false, error: 'ページが見つかりません' };
+    var now = new Date().toISOString();
+    metadata.pages[name] = {
+      author: author || '',
+      memo: memo || '',
+      currentVersion: 1,
+      versions: [{
+        version: 1,
+        date: now,
+        author: author || '',
+        size: 0
+      }]
+    };
+    // Driveからファイルサイズを取得
+    try {
+      var folder = DriveApp.getFolderById(FOLDER_ID);
+      var files = folder.getFilesByName(name + '.html');
+      if (files.hasNext()) {
+        metadata.pages[name].versions[0].size = files.next().getSize();
+      }
+    } catch (e) { /* サイズ不明でも続行 */ }
   }
   var page = metadata.pages[name];
   if (memo !== undefined && memo !== null) {
