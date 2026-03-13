@@ -777,15 +777,13 @@ function createIndexPage_(pageNum) {
       html += '<td>' + sizeKb + '</td>';
       html += '<td class="public-cell" id="pubcell-' + page.name + '">';
       html += '<button class="btn-sm ' + (page.public ? 'btn-public-on' : 'btn-public-off') + '" id="pub-' + page.name + '" onclick="togglePub(\'' + safeName + '\')">' + (page.public ? '公開中' : '非公開') + '</button>';
+      html += '<div class="pub-link" id="publink-' + page.name + '">';
       if (page.public) {
         var pubUrl = baseUrl + '?page=' + encodeURIComponent(page.name);
-        html += '<span class="pub-link" id="publink-' + page.name + '">';
-        html += ' <a href="' + pubUrl + '" target="_blank" title="' + pubUrl + '">外部リンク</a>';
-        html += '<button class="btn-copy" onclick="copyUrl(\'' + safeName + '\')" title="URLをコピー">&#128203;</button>';
-        html += '</span>';
-      } else {
-        html += '<span class="pub-link" id="publink-' + page.name + '"></span>';
+        html += '<a href="' + pubUrl + '" target="_blank" class="pub-link-a" title="' + pubUrl + '">リンク</a>';
+        html += '<button class="btn-copy" onclick="copyUrl(\'' + safeName + '\')" title="URLをコピー"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>';
       }
+      html += '</div>';
       html += '</td>';
       html += '<td class="actions">';
       html += '<button class="btn-sm btn-preview" onclick="doPreview(\'' + safeName + '\')">プレビュー</button>';
@@ -877,10 +875,12 @@ function buildStyles_() {
     '.btn-public-on:hover { background: #bbdefb; }',
     '.btn-public-off { background: #f5f5f5; color: #999; border-color: #ccc; font-size: 11px; }',
     '.btn-public-off:hover { background: #eee; }',
-    '.pub-link { font-size: 12px; margin-left: 4px; }',
-    '.pub-link a { color: #1565c0; }',
-    '.btn-copy { background: none; border: none; cursor: pointer; font-size: 13px; padding: 0 2px; color: #999; vertical-align: middle; }',
-    '.btn-copy:hover { color: #1565c0; }',
+    '.pub-link { margin-top: 3px; display: flex; align-items: center; gap: 2px; }',
+    '.pub-link:empty { margin-top: 0; }',
+    '.pub-link-a { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: #2A9BA1; text-decoration: none; padding: 1px 6px; border: 1px solid #94CDD0; border-radius: 3px; background: #f0fafa; line-height: 1.4; }',
+    '.pub-link-a:hover { background: #e0f2f2; border-color: #2A9BA1; text-decoration: none; }',
+    '.btn-copy { display: inline-flex; align-items: center; justify-content: center; background: #f0fafa; border: 1px solid #94CDD0; border-radius: 3px; cursor: pointer; padding: 2px 5px; color: #2A9BA1; line-height: 1; }',
+    '.btn-copy:hover { background: #e0f2f2; border-color: #2A9BA1; color: #27878A; }',
 
     // セル
     '.author { font-size: 13px; color: #555; white-space: nowrap; }',
@@ -1262,8 +1262,8 @@ function buildScript_(baseUrl) {
   js += '      btn.className = "btn-sm " + (r.public ? "btn-public-on" : "btn-public-off");';
   js += '      var linkEl = document.getElementById("publink-" + name);';
   js += '      if (r.public && r.url) {';
-  js += '        linkEl.innerHTML = " <a href=\\"" + r.url + "\\" target=\\"_blank\\" title=\\"" + r.url + "\\">外部リンク</a>"';
-  js += '          + "<button class=\\"btn-copy\\" onclick=\\"copyUrl(\\x27" + name + "\\x27)\\" title=\\"URLをコピー\\">&#128203;</button>";';
+  js += '        linkEl.innerHTML = "<a href=\\"" + r.url + "\\" target=\\"_blank\\" class=\\"pub-link-a\\" title=\\"" + r.url + "\\">リンク</a>"';
+  js += '          + "<button class=\\"btn-copy\\" onclick=\\"copyUrl(\\x27" + name + "\\x27)\\" title=\\"URLをコピー\\"><svg width=\\"12\\" height=\\"12\\" viewBox=\\"0 0 24 24\\" fill=\\"none\\" stroke=\\"currentColor\\" stroke-width=\\"2\\"><rect x=\\"9\\" y=\\"9\\" width=\\"13\\" height=\\"13\\" rx=\\"2\\"/><path d=\\"M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1\\"/></svg></button>";';
   js += '        showMsg("success", name + " を外部公開しました");';
   js += '      } else {';
   js += '        linkEl.innerHTML = "";';
