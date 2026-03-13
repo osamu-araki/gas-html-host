@@ -1,4 +1,5 @@
-// Version: 2.0.0 | Updated: 2026-03-13
+// Version: 2.1.0 | Updated: 2026-03-13
+// [2026-03-13] v2.1.0: メタデータCacheService対応（Drive読み込み削減、TTL 5分）
 // HTML Host ナビゲーションラッパー
 // 既存 HTML Host GAS の ?page=xxx を iframe で表示し、ナビバー・ドロワーを追加する
 
@@ -22,8 +23,18 @@ function doGet(e) {
   }
 }
 
-// ページ一覧取得（Drive の _metadata.json から）
+// [2026-03-13] ページ一覧取得（CacheService対応）
+var NAV_CACHE_KEY_ = 'nav_page_list';
+var NAV_CACHE_TTL_ = 300; // 5分
+
 function getPageList_() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get(NAV_CACHE_KEY_);
+  if (cached) {
+    try { return JSON.parse(cached); }
+    catch (e) { /* キャッシュ破損時はDriveから再取得 */ }
+  }
+
   var folder = DriveApp.getFolderById(FOLDER_ID);
   var files = folder.getFilesByName('_metadata.json');
   if (!files.hasNext()) return [];
@@ -44,6 +55,12 @@ function getPageList_() {
   }
   // 日付降順ソート
   result.sort(function(a, b) { return b.date.localeCompare(a.date); });
+
+  // キャッシュに保存（100KB上限チェック）
+  var json = JSON.stringify(result);
+  if (json.length <= 100000) {
+    cache.put(NAV_CACHE_KEY_, json, NAV_CACHE_TTL_);
+  }
   return result;
 }
 

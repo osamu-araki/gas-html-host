@@ -1,5 +1,6 @@
-<!-- Version: 1.0.0 | Updated: 2026-03-13 -->
-<!-- [2026-03-13] createIndexPage_() および関連ビルダー関数からテンプレート化 -->
+<!-- Version: 1.1.0 | Updated: 2026-03-13 -->
+<!-- [2026-03-13] v1.1.0: アップロード・スキャン後のページリロードを確実化 -->
+<!-- [2026-03-13] v1.0.0: createIndexPage_() および関連ビルダー関数からテンプレート化 -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -351,12 +352,14 @@ function escapeHtml(text) {
     .replace(/"/g, '&quot;');
 }
 
-// GAS iframe内からのリダイレクト（target="_top"で親フレームをナビゲート）
-function goTop() {
-  var link = '<a href="' + BASE_URL + '" target="_top" style="color:#155724;text-decoration:underline;margin-left:8px">トップに戻る</a>';
-  var el = document.getElementById("successMsg");
-  el.innerHTML = el.textContent + link;
-  try { window.open(BASE_URL, "_top"); } catch(e) {}
+// GAS iframe内からのページリロード（target="_top" リンククリック方式で確実にナビゲート）
+function reloadPage() {
+  var a = document.createElement("a");
+  a.href = BASE_URL;
+  a.target = "_top";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
 }
 
 // プレビューキャッシュ（クライアント側）
@@ -391,7 +394,7 @@ function doUpload() {
   if (!name) { showMsg("error", "ページ名を入力してください"); return; }
   setUploading(true);
   google.script.run.withSuccessHandler(function(r) {
-    if (r.success) { showMsg("success", r.name + " v" + r.version + " をアップロードしました"); setTimeout(function() { goTop(); }, 1500); }
+    if (r.success) { showMsg("success", r.name + " v" + r.version + " をアップロードしました"); setTimeout(function() { reloadPage(); }, 1500); }
     else { showMsg("error", r.error); setUploading(false); }
   }).withFailureHandler(function(e) { showMsg("error", e.message); setUploading(false); }).uploadHtml(name, fileContent, memo);
 }
@@ -422,7 +425,7 @@ function scanDrive() {
     if (r.count === 0) { res.innerHTML = '<span style="color:#939DA7">未登録のHTMLファイルはありませんでした。</span>'; return; }
     var names = r.imported.map(function(f) { return f.name; }).join(", ");
     showMsg("success", r.count + "件を読み込みました: " + names);
-    setTimeout(function() { goTop(); }, 1500);
+    setTimeout(function() { reloadPage(); }, 1500);
   }).withFailureHandler(function(e) { btn.disabled = false; btn.textContent = "Drive フォルダをスキャン"; showMsg("error", e.message); }).scanAndImportDriveFiles();
 }
 
@@ -517,7 +520,7 @@ function previewVersion(name, ver) {
 function restoreVer(name, ver) {
   if (!confirm("v" + ver + " を復元しますか？")) return;
   google.script.run.withSuccessHandler(function(r) {
-    if (r.success) { showMsg("success", name + " を v" + ver + " から復元しました"); closeHistory(); setTimeout(function() { goTop(); }, 1500); }
+    if (r.success) { showMsg("success", name + " を v" + ver + " から復元しました"); closeHistory(); setTimeout(function() { reloadPage(); }, 1500); }
     else { showMsg("error", r.error); }
   }).withFailureHandler(function(e) { showMsg("error", e.message); }).restoreVersion(name, ver);
 }
