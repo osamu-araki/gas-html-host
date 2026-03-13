@@ -780,7 +780,7 @@ function createIndexPage_(pageNum) {
       html += '<div class="pub-link" id="publink-' + page.name + '">';
       if (page.public) {
         var pubUrl = baseUrl + '?page=' + encodeURIComponent(page.name);
-        html += '<a href="' + pubUrl + '" target="_blank" class="pub-link-a" title="' + pubUrl + '">リンク</a>';
+        html += '<a href="' + pubUrl + '" target="_blank" class="pub-link-a" title="' + pubUrl + '">外部リンク</a>';
         html += '<button class="btn-copy" onclick="copyUrl(\'' + safeName + '\')" title="URLをコピー"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>';
       }
       html += '</div>';
@@ -877,10 +877,10 @@ function buildStyles_() {
     '.btn-public-off:hover { background: #eee; }',
     '.pub-link { margin-top: 3px; display: flex; align-items: center; gap: 2px; }',
     '.pub-link:empty { margin-top: 0; }',
-    '.pub-link-a { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: #2A9BA1; text-decoration: none; padding: 1px 6px; border: 1px solid #94CDD0; border-radius: 3px; background: #f0fafa; line-height: 1.4; }',
-    '.pub-link-a:hover { background: #e0f2f2; border-color: #2A9BA1; text-decoration: none; }',
-    '.btn-copy { display: inline-flex; align-items: center; justify-content: center; background: #f0fafa; border: 1px solid #94CDD0; border-radius: 3px; cursor: pointer; padding: 2px 5px; color: #2A9BA1; line-height: 1; }',
-    '.btn-copy:hover { background: #e0f2f2; border-color: #2A9BA1; color: #27878A; }',
+    '.pub-link-a { font-size: 11px; color: #2A9BA1; text-decoration: none; }',
+    '.pub-link-a:hover { text-decoration: underline; color: #27878A; }',
+    '.btn-copy { display: inline-flex; align-items: center; background: none; border: none; cursor: pointer; padding: 0 2px; color: #939DA7; }',
+    '.btn-copy:hover { color: #2A9BA1; }',
 
     // セル
     '.author { font-size: 13px; color: #555; white-space: nowrap; }',
@@ -1262,7 +1262,7 @@ function buildScript_(baseUrl) {
   js += '      btn.className = "btn-sm " + (r.public ? "btn-public-on" : "btn-public-off");';
   js += '      var linkEl = document.getElementById("publink-" + name);';
   js += '      if (r.public && r.url) {';
-  js += '        linkEl.innerHTML = "<a href=\\"" + r.url + "\\" target=\\"_blank\\" class=\\"pub-link-a\\" title=\\"" + r.url + "\\">リンク</a>"';
+  js += '        linkEl.innerHTML = "<a href=\\"" + r.url + "\\" target=\\"_blank\\" class=\\"pub-link-a\\" title=\\"" + r.url + "\\">外部リンク</a>"';
   js += '          + "<button class=\\"btn-copy\\" onclick=\\"copyUrl(\\x27" + name + "\\x27)\\" title=\\"URLをコピー\\"><svg width=\\"12\\" height=\\"12\\" viewBox=\\"0 0 24 24\\" fill=\\"none\\" stroke=\\"currentColor\\" stroke-width=\\"2\\"><rect x=\\"9\\" y=\\"9\\" width=\\"13\\" height=\\"13\\" rx=\\"2\\"/><path d=\\"M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1\\"/></svg></button>";';
   js += '        showMsg("success", name + " を外部公開しました");';
   js += '      } else {';
