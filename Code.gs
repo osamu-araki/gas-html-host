@@ -1,6 +1,5 @@
-// Version: 2.8.1 | Updated: 2026-03-13
-// [2026-03-13] v2.8.1: srcdoc方式に修正（GAS iframe制約回避）+ google.script.runでページ切替
-// [2026-03-13] v2.8.0: iframe ナビゲーションラッパー追加（ナビバー+ドロワー+プリフェッチ+全画面）
+// Version: 2.7.3 | Updated: 2026-03-13
+// [2026-03-13] v2.7.3: ナビラッパーを別GASに分離、?page=xxxは常に生HTML配信に戻す
 // [2026-03-12] v2.7.2: メモ欄にtitle属性追加（マウスオーバーで全文表示）
 // [2026-03-12] v2.7.1: updatePageMetadata_ を upsert 化（ページ未登録時は自動作成）
 // [2026-03-12] v2.7.0: doPost に update-metadata アクション追加（スキルからメモ・投稿者自動登録）
@@ -13,6 +12,8 @@
 
 const FOLDER_ID = PropertiesService.getScriptProperties().getProperty('FOLDER_ID');
 const ITEMS_PER_PAGE = 100;
+// [2026-03-13] ナビラッパー GAS の Web App URL
+const NAV_BASE_URL = 'https://script.google.com/a/macros/salesnow.jp/s/AKfycbw7n-hjRZvTfR0zKsKUJ_jTM5b-ZqluneGj5YyTABxEgYD3HoJgIPLIah4hrDPo3buN6g/exec';
 // [2026-03-11] ファビコン base64（16x16 PNG、ティール背景に白い </> マーク）
 var FAVICON_B64_ = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGNggAKt2Qv/k4IZkAGpmlEMIVcz3BBiFE05e4F0A0AAG5soA5A1wGzHZQiGAegKkZ2PzRAGfJqx+R9dDV4DsAUeXgNw+Z9oL6ArJOR/2kUjocRDlAHEYsozE6XZGQCLeGgrqauFjAAAAABJRU5ErkJggg==';
 
@@ -23,9 +24,6 @@ var FAVICON_B64_ = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGNg
 function doGet(e) {
   const pageName = e.parameter.page;
   const version = e.parameter.v;
-  // [2026-03-13] raw=1 で生HTML配信（iframe用・別タブ用）
-  const raw = e.parameter.raw;
-
   if (!pageName) {
     const pageNum = parseInt(e.parameter.p) || 1;
     return createIndexPage_(pageNum);
@@ -36,12 +34,8 @@ function doGet(e) {
     return serveVersionPage_(pageName, parseInt(version));
   }
 
-  // [2026-03-13] raw=1 なら生HTML、なければナビ付きラッパー
-  if (raw) {
-    return serveHtmlPage_(pageName);
-  }
-
-  return serveWrappedPage_(pageName);
+  // [2026-03-13] 常に生HTML配信（ナビラッパーは別GAS）
+  return serveHtmlPage_(pageName);
 }
 
 function doPost(e) {
@@ -315,11 +309,27 @@ function getVersionHistory(name) {
   if (!pageMeta) {
     return { success: false, error: 'ページが見つかりません' };
   }
+  // [2026-03-13] 各バージョンのバックアップファイル存在チェック
+  var folder = DriveApp.getFolderById(FOLDER_ID);
+  var versions = pageMeta.versions.slice().reverse().map(function(v) {
+    var hasFile = true;
+    if (v.version !== pageMeta.currentVersion) {
+      var vFiles = folder.getFilesByName(name + '_v' + v.version + '.html');
+      hasFile = vFiles.hasNext();
+    }
+    return {
+      version: v.version,
+      date: v.date,
+      author: v.author,
+      size: v.size,
+      hasFile: hasFile
+    };
+  });
   return {
     success: true,
     name: name,
     currentVersion: pageMeta.currentVersion,
-    versions: pageMeta.versions.slice().reverse()
+    versions: versions
   };
 }
 
@@ -350,10 +360,27 @@ function getPageContent(name) {
 }
 
 /**
+ * [2026-03-13] バージョン指定のコンテンツ取得（プレビュー用）
+ */
+function getVersionContent(name, version) {
+  var folder = DriveApp.getFolderById(FOLDER_ID);
+  var fileName = name + '_v' + version + '.html';
+  var files = folder.getFilesByName(fileName);
+  if (!files.hasNext()) {
+    return { success: false, error: 'v' + version + ' のファイルが見つかりません' };
+  }
+  return { success: true, content: files.next().getBlob().getDataAsString() };
+}
+
+/**
  * [2026-03-11] 最新10件のコンテンツをCacheServiceにプリフェッチ
  * インデックスページ生成時に裏で読み込んでおく
  */
 function prefetchContentToCache_(pages) {
+  // [2026-03-13] 引数なし（クライアント側から非同期呼び出し）の場合、ページ一覧を自動取得
+  if (!pages) {
+    pages = listPages().pages;
+  }
   var cache = CacheService.getScriptCache();
   var folder = DriveApp.getFolderById(FOLDER_ID);
   var count = Math.min(10, pages.length);
@@ -549,9 +576,8 @@ function setup(folderId) {
   return { success: true, folderId: folderId };
 }
 
-// [2026-03-13] ページ内容を取得（ナビラッパーからのページ切替用）
-function getPageContent(pageName) {
-  // キャッシュチェック
+// [2026-03-13] ページ内容を取得（ナビラッパーからのページ切替用・文字列を直接返す）
+function getRawPageContent(pageName) {
   var cache = CacheService.getScriptCache();
   var cacheKey = 'content_' + pageName;
   var cached = cache.get(cacheKey);
@@ -607,281 +633,6 @@ function serveVersionPage_(pageName, version) {
 }
 
 // ============================================================
-// [2026-03-13] iframe ナビゲーションラッパー
-// ============================================================
-
-function serveWrappedPage_(pageName) {
-  var baseUrl = ScriptApp.getService().getUrl();
-  var result = listPages();
-  var allPages = result.pages;
-
-  // 表示中ページのプリフェッチ（サーバー側キャッシュ）
-  prefetchContentToCache_(allPages);
-
-  // 現在ページの情報
-  var currentPage = null;
-  var currentIndex = 0;
-  for (var i = 0; i < allPages.length; i++) {
-    if (allPages[i].name === pageName) {
-      currentPage = allPages[i];
-      currentIndex = i;
-      break;
-    }
-  }
-
-  // ページの内容を読み込み（srcdoc用）
-  var folder = DriveApp.getFolderById(FOLDER_ID);
-  var files = folder.getFilesByName(pageName + '.html');
-  if (!files.hasNext()) {
-    return HtmlService.createHtmlOutput(
-      '<h1>404 - ページが見つかりません</h1><p><a href="' + baseUrl + '">一覧に戻る</a></p>'
-    ).setTitle('Not Found');
-  }
-
-  // [2026-03-13] GAS Web App は iframe src で別GAS URLを読めないため srcdoc を使用
-  var pageContent = files.next().getBlob().getDataAsString();
-  // srcdoc 内で使うため " をエスケープ
-  var srcdocContent = pageContent.replace(/"/g, '&quot;');
-
-  // ページ一覧JSONを生成（ドロワー用）
-  var pagesJson = JSON.stringify(allPages.map(function(p) {
-    return {
-      name: p.name,
-      author: p.author ? p.author.split('@')[0] : '',
-      memo: p.memo || '',
-      date: p.lastUpdated ? p.lastUpdated.substring(0, 10) : ''
-    };
-  }));
-
-  var FI = FAVICON_B64_;
-
-  var html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
-  html += '<meta name="viewport" content="width=device-width, initial-scale=1">';
-  html += '<link rel="icon" type="image/png" href="data:image/png;base64,' + FI + '">';
-  html += '<title>' + escapeHtml_(pageName) + ' - HTML Host</title>';
-  html += '<style>';
-  html += buildWrapperStyles_();
-  html += '</style></head><body>';
-
-  // ホバーゾーン
-  html += '<div class="hover-zone" id="hoverZone"></div>';
-  // 復帰ボタン
-  html += '<button class="restore-btn" id="restoreBtn" title="ナビバーを表示 (Esc)">&#9660;</button>';
-
-  // ナビバー
-  html += '<nav class="navbar" id="navbar">';
-  html += '<a class="nav-home" onclick="toggleDrawer();return false">';
-  html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg> 一覧</a>';
-  html += '<span class="nav-sep">&#8250;</span>';
-  html += '<span class="nav-page-name" id="currentPageName">' + escapeHtml_(pageName) + '</span>';
-  html += '<span class="nav-memo" id="currentMemo">';
-  if (currentPage && currentPage.memo) {
-    html += '&mdash; ' + escapeHtml_(currentPage.memo);
-  }
-  html += '</span>';
-  html += '<div class="nav-actions">';
-  html += '<a class="nav-link" id="rawLink" href="' + baseUrl + '?page=' + encodeURIComponent(pageName) + '&raw=1" target="_blank" title="ナビバーなしで表示">&#8599; 別タブで開く</a>';
-  html += '<button class="nav-btn" id="prevBtn" onclick="navigate(-1)" title="前のページ">&#8249;</button>';
-  html += '<button class="nav-btn" id="nextBtn" onclick="navigate(1)" title="次のページ">&#8250;</button>';
-  html += '<button class="nav-btn" onclick="toggleFullscreen()" title="全画面表示">';
-  html += '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
-  html += '</button></div></nav>';
-
-  // ドロワー
-  html += '<div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>';
-  html += '<div class="drawer" id="drawer">';
-  html += '<a class="drawer-home" href="' + baseUrl + '">&larr; トップページ（アップロード・管理）</a>';
-  html += '<div class="drawer-header"><input type="text" class="drawer-search" id="drawerSearch" placeholder="ページを検索..." oninput="filterPages(this.value)"></div>';
-  html += '<div class="drawer-list" id="drawerList"></div>';
-  html += '</div>';
-
-  // iframe（srcdoc でHTMLを直接埋め込み — GAS同士のiframe読み込み制約を回避）
-  html += '<iframe class="content-frame" id="contentFrame" srcdoc="' + srcdocContent + '"></iframe>';
-
-  // JavaScript
-  html += '<script>';
-  html += 'var BASE_URL=' + JSON.stringify(baseUrl) + ';';
-  html += 'var pages=' + pagesJson + ';';
-  html += 'var currentIndex=' + currentIndex + ';';
-  html += buildWrapperScript_();
-  html += '</script>';
-
-  html += '</body></html>';
-
-  return HtmlService.createHtmlOutput(html)
-    .setTitle(pageName + ' - HTML Host')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-}
-
-function buildWrapperStyles_() {
-  var css = '';
-  css += '*{margin:0;padding:0;box-sizing:border-box}';
-  css += 'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f5f5;overflow:hidden}';
-
-  // ナビバー
-  css += '.navbar{position:fixed;top:0;left:0;right:0;height:40px;background:#283C50;color:#fff;display:flex;align-items:center;padding:0 10px;z-index:1000;box-shadow:0 1px 3px rgba(0,0,0,.25);gap:8px;font-size:13px;transition:transform .25s ease,opacity .25s ease}';
-  css += '.navbar.hidden{transform:translateY(-100%);opacity:0;pointer-events:none}';
-  css += '.navbar.peek{transform:translateY(0);opacity:1;pointer-events:auto}';
-  css += '.navbar a{color:#94CDD0;text-decoration:none}.navbar a:hover{color:#fff}';
-  css += '.nav-home{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;background:rgba(255,255,255,.1);font-size:12px;cursor:pointer;white-space:nowrap}';
-  css += '.nav-home:hover{background:rgba(255,255,255,.2)}';
-  css += '.nav-sep{color:#596d82;margin:0 1px}';
-  css += '.nav-page-name{font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;font-size:13px}';
-  css += '.nav-memo{color:#7b8fa3;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}';
-  css += '.nav-actions{display:flex;align-items:center;gap:2px;margin-left:auto;flex-shrink:0}';
-  css += '.nav-btn{background:transparent;color:#7b8fa3;border:none;width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}';
-  css += '.nav-btn:hover{background:rgba(255,255,255,.12);color:#fff}';
-  css += '.nav-link{color:#7b8fa3;font-size:11px;padding:4px 6px;border-radius:4px;white-space:nowrap}';
-  css += '.nav-link:hover{background:rgba(255,255,255,.1);color:#94CDD0}';
-
-  // ホバーゾーン・復帰ボタン
-  css += '.hover-zone{position:fixed;top:0;left:0;right:0;height:6px;z-index:999;display:none}';
-  css += '.hover-zone.active{display:block}';
-  css += '.restore-btn{position:fixed;top:8px;right:8px;z-index:998;background:rgba(40,60,80,.6);color:rgba(255,255,255,.7);border:none;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);transition:opacity .2s;opacity:.4}';
-  css += '.restore-btn:hover{opacity:1;background:rgba(40,60,80,.9);color:#fff}';
-  css += '.restore-btn.visible{display:flex}';
-
-  // ドロワー
-  css += '.drawer-overlay{position:fixed;top:40px;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:900;opacity:0;pointer-events:none;transition:opacity .2s}';
-  css += '.drawer-overlay.open{opacity:1;pointer-events:auto}';
-  css += '.drawer{position:fixed;top:40px;left:0;bottom:0;width:320px;background:#fff;z-index:950;transform:translateX(-100%);transition:transform .2s ease;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.12)}';
-  css += '.drawer.open{transform:translateX(0)}';
-  css += '.drawer-header{padding:10px 12px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:8px;flex-shrink:0}';
-  css += '.drawer-search{flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;outline:none}';
-  css += '.drawer-search:focus{border-color:#2A9BA1;box-shadow:0 0 0 2px rgba(42,155,161,.15)}';
-  css += '.drawer-list{flex:1;overflow-y:auto;padding:2px 0}';
-  css += '.drawer-item{display:block;padding:8px 14px;text-decoration:none;color:#283C50;border-left:3px solid transparent;cursor:pointer}';
-  css += '.drawer-item:hover{background:#f3f4f6}';
-  css += '.drawer-item.active{background:#e6f7f8;border-left-color:#2A9BA1}';
-  css += '.drawer-item-name{font-size:13px;font-weight:500}';
-  css += '.drawer-item-meta{font-size:11px;color:#939DA7;display:flex;gap:8px;margin-top:1px}';
-  css += '.drawer-item-memo{font-size:11px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}';
-  css += '.drawer-home{display:block;padding:10px 14px;text-decoration:none;color:#2A9BA1;font-size:13px;font-weight:500;border-bottom:1px solid #e5e7eb}';
-  css += '.drawer-home:hover{background:#e6f7f8}';
-
-  // iframe
-  css += '.content-frame{position:fixed;top:40px;left:0;right:0;bottom:0;border:none;width:100%;height:calc(100vh - 40px);transition:top .25s ease,height .25s ease}';
-  css += '.content-frame.fullscreen{top:0;height:100vh}';
-
-  // モバイル
-  css += '@media(max-width:600px){.drawer{width:85vw}.nav-memo{display:none}.nav-page-name{max-width:140px}}';
-
-  return css;
-}
-
-function buildWrapperScript_() {
-  var js = '';
-
-  // プリフェッチ
-  js += 'var prefetchCache={};';
-  js += 'function prefetchNearby(idx){';
-  js += '  [idx-1,idx+1,idx+2].forEach(function(i){';
-  js += '    if(i>=0&&i<pages.length&&!prefetchCache[i]){';
-  js += '      prefetchCache[i]=true;';
-  js += '      var link=document.createElement("link");link.rel="prefetch";';
-  js += '      link.href=BASE_URL+"?page="+encodeURIComponent(pages[i].name)+"&raw=1";';
-  js += '      document.head.appendChild(link);';
-  js += '    }';
-  js += '  });';
-  js += '}';
-
-  // エスケープ
-  js += 'function esc(s){var d=document.createElement("div");d.textContent=s;return d.innerHTML}';
-
-  // ドロワー描画
-  js += 'function renderDrawer(filter){';
-  js += '  var list=document.getElementById("drawerList");';
-  js += '  var filtered=filter?pages.filter(function(p){return(p.name+" "+p.author+" "+p.memo).toLowerCase().indexOf(filter.toLowerCase())>=0}):pages;';
-  js += '  var h="";';
-  js += '  filtered.forEach(function(p){';
-  js += '    var idx=pages.indexOf(p);var cls=idx===currentIndex?" active":"";';
-  js += '    h+="<div class=\\"drawer-item"+cls+"\\" onclick=\\"selectPage("+idx+")\\">";';
-  js += '    h+="<div class=\\"drawer-item-name\\">"+esc(p.name)+"</div>";';
-  js += '    if(p.memo)h+="<div class=\\"drawer-item-memo\\">"+esc(p.memo)+"</div>";';
-  js += '    h+="<div class=\\"drawer-item-meta\\"><span>"+(p.author||"\\u2014")+"</span><span>"+p.date+"</span></div>";';
-  js += '    h+="</div>";';
-  js += '  });';
-  js += '  list.innerHTML=h;';
-  js += '}';
-
-  // ドロワー開閉
-  js += 'function toggleDrawer(){';
-  js += '  document.getElementById("drawer").classList.toggle("open");';
-  js += '  document.getElementById("drawerOverlay").classList.toggle("open");';
-  js += '  if(document.getElementById("drawer").classList.contains("open"))';
-  js += '    setTimeout(function(){document.getElementById("drawerSearch").focus()},200);';
-  js += '}';
-
-  // ページ選択
-  js += 'function selectPage(idx){';
-  js += '  currentIndex=idx;var p=pages[idx];';
-  js += '  document.getElementById("currentPageName").textContent=p.name;';
-  js += '  document.getElementById("currentMemo").textContent=p.memo?"\\u2014 "+p.memo:"";';
-  js += '  document.getElementById("rawLink").href=BASE_URL+"?page="+encodeURIComponent(p.name)+"&raw=1";';
-  js += '  renderDrawer(document.getElementById("drawerSearch").value);';
-  js += '  document.getElementById("drawer").classList.remove("open");';
-  js += '  document.getElementById("drawerOverlay").classList.remove("open");';
-  js += '  prefetchNearby(idx);';
-  // google.script.run でサーバーからHTMLを取得し srcdoc に設定
-  js += '  google.script.run.withSuccessHandler(function(content){';
-  js += '    if(content)document.getElementById("contentFrame").srcdoc=content;';
-  js += '    else document.getElementById("contentFrame").srcdoc="<h1>ページが見つかりません</h1>";';
-  js += '  }).getPageContent(p.name);';
-  js += '}';
-
-  // ナビゲーション
-  js += 'function navigate(dir){var n=currentIndex+dir;if(n>=0&&n<pages.length)selectPage(n)}';
-
-  // 検索
-  js += 'function filterPages(v){renderDrawer(v)}';
-
-  // 全画面
-  js += 'var isFullscreen=false,peekTimeout=null;';
-  js += 'function toggleFullscreen(){';
-  js += '  isFullscreen=!isFullscreen;';
-  js += '  var nb=document.getElementById("navbar"),fr=document.getElementById("contentFrame");';
-  js += '  var hz=document.getElementById("hoverZone"),rb=document.getElementById("restoreBtn");';
-  js += '  if(isFullscreen){';
-  js += '    nb.classList.add("hidden");fr.classList.add("fullscreen");';
-  js += '    hz.classList.add("active");rb.classList.add("visible");';
-  js += '    document.getElementById("drawer").classList.remove("open");';
-  js += '    document.getElementById("drawerOverlay").classList.remove("open");';
-  js += '  }else{';
-  js += '    nb.classList.remove("hidden");nb.classList.remove("peek");';
-  js += '    fr.classList.remove("fullscreen");';
-  js += '    hz.classList.remove("active");rb.classList.remove("visible");';
-  js += '  }';
-  js += '}';
-
-  // ホバーで一時表示
-  js += 'document.getElementById("hoverZone").addEventListener("mouseenter",function(){';
-  js += '  if(!isFullscreen)return;';
-  js += '  document.getElementById("navbar").classList.remove("hidden");';
-  js += '  document.getElementById("navbar").classList.add("peek");';
-  js += '  clearTimeout(peekTimeout);';
-  js += '});';
-  js += 'document.getElementById("navbar").addEventListener("mouseleave",function(){';
-  js += '  if(!isFullscreen)return;';
-  js += '  peekTimeout=setTimeout(function(){';
-  js += '    document.getElementById("navbar").classList.add("hidden");';
-  js += '    document.getElementById("navbar").classList.remove("peek");';
-  js += '  },400);';
-  js += '});';
-  js += 'document.getElementById("navbar").addEventListener("mouseenter",function(){clearTimeout(peekTimeout)});';
-
-  // 復帰ボタン
-  js += 'document.getElementById("restoreBtn").addEventListener("click",function(){toggleFullscreen()});';
-
-  // Escキー
-  js += 'document.addEventListener("keydown",function(e){if(e.key==="Escape"&&isFullscreen)toggleFullscreen()});';
-
-  // 初期化
-  js += 'renderDrawer();prefetchNearby(currentIndex);';
-
-  return js;
-}
-
-// ============================================================
 // インデックスページ生成
 // ============================================================
 
@@ -890,8 +641,7 @@ function createIndexPage_(pageNum) {
   var baseUrl = ScriptApp.getService().getUrl();
   var allPages = result.pages;
 
-  // [2026-03-11] 最新10件をサーバー側CacheServiceにプリフェッチ
-  prefetchContentToCache_(allPages);
+  // [2026-03-13] プリフェッチはページ表示後にクライアント側から非同期実行（表示ブロック回避）
 
   var totalPages = Math.ceil(allPages.length / ITEMS_PER_PAGE) || 1;
   if (pageNum > totalPages) pageNum = totalPages;
@@ -960,7 +710,7 @@ function createIndexPage_(pageNum) {
       var safeMemo = (page.memo || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
 
       html += '<tr id="row-' + page.name + '">';
-      html += '<td><a href="' + baseUrl + '?page=' + encodeURIComponent(page.name) + '" target="_blank">' + escapeHtml_(page.name) + '</a></td>';
+      html += '<td><a href="' + NAV_BASE_URL + '?page=' + encodeURIComponent(page.name) + '" target="_blank">' + escapeHtml_(page.name) + '</a></td>';
       html += '<td class="author">' + escapeHtml_(page.author ? page.author.split('@')[0] : '') + '</td>';
       html += '<td class="memo-cell">';
       // [2026-03-12] title属性でマウスオーバー時に全文表示
@@ -1085,7 +835,9 @@ function buildStyles_() {
 
     // モーダル
     '.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }',
+    '#previewOverlay { z-index: 1010; }',
     '.modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 8px; width: 90%; max-width: 900px; max-height: 85vh; z-index: 1001; display: flex; flex-direction: column; }',
+    '#previewModal { z-index: 1011; }',
     // [2026-03-11] プレビューモーダルはリサイズ可能
     '.modal-preview { resize: both; overflow: hidden; min-width: 400px; min-height: 300px; }',
     '.modal-preview.maximized { top: 2%; left: 2%; width: 96% !important; height: 96% !important; max-width: none !important; max-height: none !important; transform: none !important; border-radius: 4px; }',
@@ -1352,7 +1104,7 @@ function buildScript_(baseUrl) {
   js += '  document.getElementById("historyOverlay").style.display = "block";';
   js += '  google.script.run.withSuccessHandler(function(r) {';
   js += '    if (!r.success) { document.getElementById("historyBody").innerHTML = "<p>" + r.error + "</p>"; return; }';
-  js += '    var h = "<table class=\\"history-table\\"><tr><th>Ver</th><th>日時</th><th>投稿者</th><th>サイズ</th><th>操作</th></tr>";';
+  js += '    var h = "<table class=\\"history-table\\"><tr><th>Ver</th><th>日時</th><th>投稿者</th><th>サイズ</th><th>プレビュー</th><th>操作</th></tr>";';
   js += '    r.versions.forEach(function(v) {';
   js += '      var d = new Date(v.date);';
   js += '      var ds = d.getFullYear() + "/" + (d.getMonth()+1) + "/" + d.getDate() + " " + d.getHours() + ":" + ("0"+d.getMinutes()).slice(-2);';
@@ -1361,8 +1113,18 @@ function buildScript_(baseUrl) {
   js += '      h += "<tr><td>v" + v.version + (isCurrent ? " (現在)" : "") + "</td>";';
   js += '      h += "<td>" + ds + "</td><td>" + (v.author ? v.author.split("@")[0] : "") + "</td><td>" + sz + "</td>";';
   js += '      h += "<td>";';
-  js += '      if (!isCurrent) {';
-  js += '        h += "<button class=\\"btn-sm btn-preview\\" onclick=\\"restoreVer(\\x27" + name + "\\x27, " + v.version + ")\\">復元</button>";';
+  js += '      if (isCurrent) {';
+  js += '        h += "<button class=\\"btn-sm btn-preview\\" onclick=\\"doPreview(\\x27" + name + "\\x27)\\">表示</button>";';
+  js += '      } else if (v.hasFile) {';
+  js += '        h += "<button class=\\"btn-sm btn-preview\\" onclick=\\"previewVersion(\\x27" + name + "\\x27, " + v.version + ")\\">表示</button>";';
+  js += '      } else {';
+  js += '        h += "<span style=\\"color:#999;font-size:11px\\">ファイルなし</span>";';
+  js += '      }';
+  js += '      h += "</td><td>";';
+  js += '      if (!isCurrent && v.hasFile) {';
+  js += '        h += "<button class=\\"btn-sm\\" style=\\"background:#e8f5e9;color:#2e7d32\\" onclick=\\"restoreVer(\\x27" + name + "\\x27, " + v.version + ")\\">復元</button>";';
+  js += '      } else if (!isCurrent) {';
+  js += '        h += "<span style=\\"color:#999;font-size:11px\\">\\u2014</span>";';
   js += '      }';
   js += '      h += "</td></tr>";';
   js += '    });';
@@ -1371,6 +1133,17 @@ function buildScript_(baseUrl) {
   js += '  }).withFailureHandler(function(e) { document.getElementById("historyBody").innerHTML = "<p>エラー: " + e.message + "</p>"; }).getVersionHistory(name);';
   js += '}';
   js += 'function closeHistory() { document.getElementById("historyOverlay").style.display = "none"; }';
+
+  // [2026-03-13] バージョン指定プレビュー（履歴モーダルを閉じてプレビューモーダルを開く）
+  js += 'function previewVersion(name, ver) {';
+  js += '  document.getElementById("previewTitle").textContent = name + " v" + ver + " - プレビュー";';
+  js += '  document.getElementById("previewOverlay").style.display = "block";';
+  js += '  document.getElementById("previewBody").innerHTML = "<p>読み込み中...</p>";';
+  js += '  google.script.run.withSuccessHandler(function(r) {';
+  js += '    if (r.success) { renderPreview(r.content); }';
+  js += '    else { document.getElementById("previewBody").innerHTML = "<p>エラー: " + r.error + "</p>"; }';
+  js += '  }).withFailureHandler(function(e) { document.getElementById("previewBody").innerHTML = "<p>エラー: " + e.message + "</p>"; }).getVersionContent(name, ver);';
+  js += '}';
 
   // バージョン復元
   js += 'function restoreVer(name, ver) {';
@@ -1477,6 +1250,9 @@ function buildScript_(baseUrl) {
   js += '    el.type = "image/png"; el.href = fi;';
   js += '  } catch(e) {}';
   js += '})();';
+
+  // [2026-03-13] ページ表示後にサーバー側キャッシュを非同期でウォーム（表示をブロックしない）
+  js += 'setTimeout(function(){ google.script.run.prefetchContentToCache_(); }, 500);';
 
   return js;
 }
