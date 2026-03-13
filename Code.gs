@@ -882,7 +882,7 @@ function buildGuideSection_() {
   html += '<div style="margin-top:12px;padding:12px 16px;background:#f0f9fa;border-radius:6px;border-left:3px solid #2A9BA1">';
   html += '<b>Claude Code でスキル化する方法</b>';
   html += '<ol style="margin:6px 0 0;padding-left:20px;font-size:13px;line-height:1.7">';
-  html += '<li>GitHub リポジトリ <code>gas-html-host</code> をクローン</li>';
+  html += '<li>GitHub リポジトリ <code>osamu-araki/gas-html-host</code> をクローン（<code>git clone https://github.com/osamu-araki/gas-html-host.git</code>）</li>';
   html += '<li><code>skills/deploy-html-example.md</code> をコピーして <code>~/.claude/skills/deploy-html/SKILL.md</code> に配置</li>';
   html += '<li>SKILL.md 内の <code>PROJECT_DIR</code>、<code>FOLDER_ID</code>、<code>WEB_APP_URL</code> を自分の環境に合わせて書き換え</li>';
   html += '<li>Claude Code で <code>/deploy-html</code> と入力すれば準備完了</li>';
