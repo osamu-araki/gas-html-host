@@ -775,8 +775,17 @@ function createIndexPage_(pageNum) {
       html += '</td>';
       html += '<td>' + dateStr + '</td>';
       html += '<td>' + sizeKb + '</td>';
-      html += '<td class="public-cell">';
+      html += '<td class="public-cell" id="pubcell-' + page.name + '">';
       html += '<button class="btn-sm ' + (page.public ? 'btn-public-on' : 'btn-public-off') + '" id="pub-' + page.name + '" onclick="togglePub(\'' + safeName + '\')">' + (page.public ? '公開中' : '非公開') + '</button>';
+      if (page.public) {
+        var pubUrl = baseUrl + '?page=' + encodeURIComponent(page.name);
+        html += '<span class="pub-link" id="publink-' + page.name + '">';
+        html += ' <a href="' + pubUrl + '" target="_blank" title="' + pubUrl + '">外部リンク</a>';
+        html += '<button class="btn-copy" onclick="copyUrl(\'' + safeName + '\')" title="URLをコピー">&#128203;</button>';
+        html += '</span>';
+      } else {
+        html += '<span class="pub-link" id="publink-' + page.name + '"></span>';
+      }
       html += '</td>';
       html += '<td class="actions">';
       html += '<button class="btn-sm btn-preview" onclick="doPreview(\'' + safeName + '\')">プレビュー</button>';
@@ -868,6 +877,10 @@ function buildStyles_() {
     '.btn-public-on:hover { background: #bbdefb; }',
     '.btn-public-off { background: #f5f5f5; color: #999; border-color: #ccc; font-size: 11px; }',
     '.btn-public-off:hover { background: #eee; }',
+    '.pub-link { font-size: 12px; margin-left: 4px; }',
+    '.pub-link a { color: #1565c0; }',
+    '.btn-copy { background: none; border: none; cursor: pointer; font-size: 13px; padding: 0 2px; color: #999; vertical-align: middle; }',
+    '.btn-copy:hover { color: #1565c0; }',
 
     // セル
     '.author { font-size: 13px; color: #555; white-space: nowrap; }',
@@ -1247,13 +1260,27 @@ function buildScript_(baseUrl) {
   js += '    if (r.success) {';
   js += '      btn.textContent = r.public ? "公開中" : "非公開";';
   js += '      btn.className = "btn-sm " + (r.public ? "btn-public-on" : "btn-public-off");';
+  js += '      var linkEl = document.getElementById("publink-" + name);';
   js += '      if (r.public && r.url) {';
-  js += '        showMsg("success", name + " を外部公開しました。URL: " + r.url);';
+  js += '        linkEl.innerHTML = " <a href=\\"" + r.url + "\\" target=\\"_blank\\" title=\\"" + r.url + "\\">外部リンク</a>"';
+  js += '          + "<button class=\\"btn-copy\\" onclick=\\"copyUrl(\\x27" + name + "\\x27)\\" title=\\"URLをコピー\\">&#128203;</button>";';
+  js += '        showMsg("success", name + " を外部公開しました");';
   js += '      } else {';
+  js += '        linkEl.innerHTML = "";';
   js += '        showMsg("success", name + " を非公開にしました");';
   js += '      }';
   js += '    } else { showMsg("error", r.error); }';
   js += '  }).withFailureHandler(function(e) { btn.disabled = false; showMsg("error", e.message); }).togglePublic(name);';
+  js += '}';
+
+  // [2026-03-13] URLコピー
+  js += 'function copyUrl(name) {';
+  js += '  var url = BASE_URL + "?page=" + encodeURIComponent(name);';
+  js += '  navigator.clipboard.writeText(url).then(function() {';
+  js += '    showMsg("success", "URLをコピーしました: " + url);';
+  js += '  }).catch(function() {';
+  js += '    prompt("URLをコピーしてください:", url);';
+  js += '  });';
   js += '}';
 
   // メッセージ表示
