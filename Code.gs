@@ -1,4 +1,5 @@
-// Version: 2.7.3 | Updated: 2026-03-13
+// Version: 2.7.5 | Updated: 2026-03-13
+// [2026-03-13] v2.7.5: 復元時にメモを上書きしない、復元情報を履歴の備考欄に記録
 // [2026-03-13] v2.7.3: ナビラッパーを別GASに分離、?page=xxxは常に生HTML配信に戻す
 // [2026-03-12] v2.7.2: メモ欄にtitle属性追加（マウスオーバーで全文表示）
 // [2026-03-12] v2.7.1: updatePageMetadata_ を upsert 化（ページ未登録時は自動作成）
@@ -322,7 +323,8 @@ function getVersionHistory(name) {
       date: v.date,
       author: v.author,
       size: v.size,
-      hasFile: hasFile
+      hasFile: hasFile,
+      note: v.note || ''
     };
   });
   return {
@@ -564,8 +566,21 @@ function restoreVersion(name, version) {
     return { success: false, error: 'バージョン ' + version + ' が見つかりません' };
   }
 
+  // [2026-03-13] メモを上書きしない（空文字で渡す）、復元情報は履歴に記録
   var content = files.next().getBlob().getDataAsString();
-  return uploadHtml(name, content, 'v' + version + ' から復元');
+  var result = uploadHtml(name, content, '');
+
+  // 履歴のバージョンエントリに復元元情報を追記
+  if (result.success) {
+    var metadata = getMetadata_();
+    var pageMeta = metadata.pages[name];
+    if (pageMeta && pageMeta.versions.length > 0) {
+      pageMeta.versions[pageMeta.versions.length - 1].note = 'v' + version + ' から復元';
+      saveMetadata_(metadata);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -1104,7 +1119,7 @@ function buildScript_(baseUrl) {
   js += '  document.getElementById("historyOverlay").style.display = "block";';
   js += '  google.script.run.withSuccessHandler(function(r) {';
   js += '    if (!r.success) { document.getElementById("historyBody").innerHTML = "<p>" + r.error + "</p>"; return; }';
-  js += '    var h = "<table class=\\"history-table\\"><tr><th>Ver</th><th>日時</th><th>投稿者</th><th>サイズ</th><th>プレビュー</th><th>操作</th></tr>";';
+  js += '    var h = "<table class=\\"history-table\\"><tr><th>Ver</th><th>日時</th><th>投稿者</th><th>サイズ</th><th>備考</th><th>プレビュー</th><th>操作</th></tr>";';
   js += '    r.versions.forEach(function(v) {';
   js += '      var d = new Date(v.date);';
   js += '      var ds = d.getFullYear() + "/" + (d.getMonth()+1) + "/" + d.getDate() + " " + d.getHours() + ":" + ("0"+d.getMinutes()).slice(-2);';
@@ -1112,6 +1127,7 @@ function buildScript_(baseUrl) {
   js += '      var isCurrent = v.version === r.currentVersion;';
   js += '      h += "<tr><td>v" + v.version + (isCurrent ? " (現在)" : "") + "</td>";';
   js += '      h += "<td>" + ds + "</td><td>" + (v.author ? v.author.split("@")[0] : "") + "</td><td>" + sz + "</td>";';
+  js += '      h += "<td style=\\"font-size:11px;color:#666\\">" + (v.note || "") + "</td>";';
   js += '      h += "<td>";';
   js += '      if (isCurrent) {';
   js += '        h += "<button class=\\"btn-sm btn-preview\\" onclick=\\"doPreview(\\x27" + name + "\\x27)\\">表示</button>";';
