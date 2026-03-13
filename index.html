@@ -1,0 +1,664 @@
+<!-- Version: 1.0.0 | Updated: 2026-03-13 -->
+<!-- [2026-03-13] createIndexPage_() および関連ビルダー関数からテンプレート化 -->
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/png" href="data:image/png;base64,<?= faviconB64 ?>">
+<link rel="shortcut icon" type="image/png" href="data:image/png;base64,<?= faviconB64 ?>">
+<title>HTML Host</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #283C50; }
+h1 { color: #2A9BA1; border-bottom: 2px solid #94CDD0; padding-bottom: 12px; }
+h2 { color: #283C50; font-size: 18px; margin-top: 32px; }
+.count { font-size: 14px; color: #939DA7; font-weight: normal; }
+table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; }
+th { background: #2A9BA1; color: white; padding: 8px 10px; text-align: left; font-size: 13px; white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid #e0e0e0; }
+tr:hover { background: #f5fafa; }
+a { color: #2A9BA1; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.empty { color: #939DA7; font-style: italic; margin-top: 16px; }
+
+/* 2カラムレイアウト */
+.two-col { display: flex; gap: 20px; margin-top: 8px; }
+.two-col .col { flex: 1; min-width: 0; }
+@media (max-width: 700px) { .two-col { flex-direction: column; } }
+
+/* アップロードエリア */
+.upload-area { background: #f8fafa; border: 2px dashed #94CDD0; border-radius: 8px; padding: 20px; margin-top: 12px; }
+.upload-area.dragover { background: #e0f2f2; border-color: #2A9BA1; }
+.form-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+#fileName { color: #939DA7; font-size: 13px; margin-top: 6px; }
+
+/* ボタン */
+.btn { display: inline-block; padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.btn-primary { background: #2A9BA1; color: white; }
+.btn-primary:hover { background: #27878A; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-sm { padding: 3px 10px; font-size: 12px; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; background: white; margin-right: 4px; }
+.btn-preview { color: #2A9BA1; border-color: #2A9BA1; }
+.btn-preview:hover { background: #f0f9fa; }
+.btn-danger { color: #e53935; border-color: #e53935; }
+.btn-danger:hover { background: #fbe9e7; }
+.btn-link { background: none; border: none; color: #2A9BA1; cursor: pointer; font-size: 12px; padding: 0 4px; text-decoration: underline; }
+.btn-icon { background: none; border: none; cursor: pointer; font-size: 14px; padding: 0 4px; color: #939DA7; }
+.btn-icon:hover { color: #2A9BA1; }
+
+/* メッセージ */
+.msg { padding: 10px 16px; border-radius: 4px; margin-top: 12px; display: none; }
+.msg-success { background: #d4edda; color: #155724; }
+.msg-error { background: #f8d7da; color: #721c24; }
+
+/* フォーム */
+input[type="text"] { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+.input-wide { width: 100%; box-sizing: border-box; }
+textarea { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical; }
+
+/* 公開トグル */
+.public-cell { white-space: nowrap; }
+.btn-public-on { background: #e3f2fd; color: #1565c0; border-color: #1565c0; font-size: 11px; }
+.btn-public-on:hover { background: #bbdefb; }
+.btn-public-off { background: #f5f5f5; color: #999; border-color: #ccc; font-size: 11px; }
+.btn-public-off:hover { background: #eee; }
+.pub-link { margin-top: 3px; display: flex; align-items: center; gap: 2px; }
+.pub-link:empty { margin-top: 0; }
+.pub-link-a { font-size: 11px; color: #2A9BA1; text-decoration: none; }
+.pub-link-a:hover { text-decoration: underline; color: #27878A; }
+.btn-copy { display: inline-flex; align-items: center; background: none; border: none; cursor: pointer; padding: 0 2px; color: #939DA7; }
+.btn-copy:hover { color: #2A9BA1; }
+
+/* セル */
+.author { font-size: 13px; color: #555; white-space: nowrap; }
+.memo-cell { max-width: 200px; font-size: 13px; color: #666; }
+.memo-text { display: inline-block; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+.ver-cell { white-space: nowrap; font-size: 13px; }
+.actions { white-space: nowrap; }
+
+/* Driveインポート */
+.drive-import { background: #f8f8fc; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-top: 12px; }
+.drive-import .form-row { margin-top: 8px; }
+
+/* 検索バー + 一覧ヘッダー */
+.list-header { display: flex; justify-content: space-between; align-items: center; margin-top: 32px; gap: 16px; flex-wrap: wrap; }
+.search-input { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; width: 280px; }
+.search-input:focus { outline: none; border-color: #2A9BA1; box-shadow: 0 0 0 2px rgba(42,155,161,0.15); }
+.search-status { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #939DA7; }
+
+/* ページネーション */
+.pagination { margin-top: 24px; text-align: center; }
+.pagination .page-link, .pagination .page-current { display: inline-block; padding: 6px 12px; margin: 0 2px; border-radius: 4px; }
+.page-current { background: #2A9BA1; color: white; font-weight: bold; }
+.page-link { border: 1px solid #ccc; color: #283C50; }
+.page-link:hover { background: #f0f9fa; text-decoration: none; }
+
+/* モーダル */
+.modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+#previewOverlay { z-index: 1010; }
+.modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border-radius: 8px; width: 90%; max-width: 900px; max-height: 85vh; z-index: 1001; display: flex; flex-direction: column; }
+#previewModal { z-index: 1011; }
+.modal-preview { resize: both; overflow: hidden; min-width: 400px; min-height: 300px; }
+.modal-preview.maximized { top: 2%; left: 2%; width: 96% !important; height: 96% !important; max-width: none !important; max-height: none !important; transform: none !important; border-radius: 4px; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
+.modal-header h3 { margin: 0; font-size: 16px; flex: 1; }
+.modal-header-btns { display: flex; align-items: center; gap: 8px; }
+.modal-close { background: none; border: none; font-size: 24px; cursor: pointer; color: #999; padding: 0 4px; }
+.modal-close:hover { color: #333; }
+.btn-maximize { background: none; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; color: #666; padding: 2px 8px; font-size: 16px; line-height: 1; }
+.btn-maximize:hover { background: #f0f9fa; border-color: #2A9BA1; color: #2A9BA1; }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-body iframe { width: 100%; height: 100%; min-height: 60vh; border: 1px solid #eee; border-radius: 4px; }
+.maximized .modal-body iframe { min-height: 0; }
+
+/* 履歴テーブル */
+.history-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.history-table th { background: #f5f5f5; color: #283C50; padding: 8px 10px; text-align: left; }
+.history-table td { padding: 8px 10px; border-bottom: 1px solid #eee; }
+
+/* ガイド */
+.guide { background: #f8fafa; border: 1px solid #94CDD0; border-radius: 8px; padding: 16px 20px; margin-top: 12px; font-size: 14px; line-height: 1.6; }
+.guide summary { cursor: pointer; font-weight: bold; color: #2A9BA1; }
+.guide ul { margin: 8px 0; padding-left: 20px; }
+.guide li { margin: 4px 0; }
+.guide .limit { color: #939DA7; font-size: 13px; margin-top: 8px; border-top: 1px solid #ddd; padding-top: 8px; }
+</style>
+</head>
+<body>
+
+<!-- ヘッダー -->
+<h1>HTML Host</h1>
+
+<!-- 使い方・制限事項 -->
+<details class="guide">
+  <summary>使い方・制限事項</summary>
+  <ul>
+    <li><b>HTMLアップロード</b>: ファイル選択またはドラッグ&ドロップでHTMLファイルをアップロードできます。</li>
+    <li><b>Driveから読み込む</b>: 対象の共有Driveフォルダに直接HTMLファイルを置き、「スキャン」ボタンを押すと未登録ファイルが自動で読み込まれます。投稿者はファイル所有者が自動設定されます。</li>
+    <li><b>バージョン管理</b>: 同名ファイルを再アップロードすると、旧バージョンが自動保存されます。「履歴」から過去バージョンの閲覧・復元が可能です。</li>
+    <li><b>プレビュー</b>: 一覧の「プレビュー」ボタンでページ内容を確認できます。</li>
+    <li><b>メモ</b>: 各ページに説明メモを追加・編集できます。CLIデプロイ時はHTMLの内容から概要が自動生成されます。</li>
+    <li><b>CLI デプロイ</b>: Claude Code の <code>/deploy-html</code> スキルでコマンドラインからもデプロイ可能です。メモ・投稿者が自動登録されます。</li>
+  </ul>
+
+  <div style="margin-top:12px;padding:12px 16px;background:#f0f9fa;border-radius:6px;border-left:3px solid #2A9BA1">
+    <b>Claude Code でスキル化する方法</b>
+    <ol style="margin:6px 0 0;padding-left:20px;font-size:13px;line-height:1.7">
+      <li>GitHub リポジトリ <code>osamu-araki/gas-html-host</code> をクローン（<code>git clone https://github.com/osamu-araki/gas-html-host.git</code>）</li>
+      <li><code>skills/deploy-html-example.md</code> をコピーして <code>~/.claude/skills/deploy-html/SKILL.md</code> に配置</li>
+      <li>SKILL.md 内の <code>PROJECT_DIR</code>、<code>FOLDER_ID</code>、<code>WEB_APP_URL</code> を自分の環境に合わせて書き換え</li>
+      <li>Claude Code で <code>/deploy-html</code> と入力すれば準備完了</li>
+    </ol>
+    <div style="margin-top:8px;font-size:13px"><b>スキル化でできること:</b></div>
+    <ul style="margin:4px 0 0;padding-left:20px;font-size:13px;line-height:1.6">
+      <li><code>/deploy-html file.html</code> — HTMLファイルをワンコマンドでデプロイ、公開URLを即取得</li>
+      <li><code>/deploy-html --list</code> — デプロイ済みページの一覧をターミナルで確認</li>
+      <li><code>/deploy-html --delete ページ名</code> — 不要なページをコマンドラインから削除</li>
+      <li>Claude Code が生成したHTML（レポート・ダッシュボード等）を会話中にそのままデプロイ可能</li>
+    </ul>
+  </div>
+
+  <div class="limit">
+    <b>制限事項:</b>
+    ファイルサイズ上限 約500KB/ページ ｜
+    カスタムドメイン非対応 ｜
+    CDNからのCSS/JS読み込みは可能 ｜
+    閲覧にはGoogle Workspace認証が必要
+  </div>
+</details>
+
+<!-- アップロード + Driveスキャン（横並び） -->
+<div class="two-col">
+  <div class="col">
+    <!-- アップロードフォーム -->
+    <h2 style="margin-top:12px">HTML アップロード</h2>
+    <div class="upload-area" id="dropZone">
+      <input type="file" id="fileInput" accept=".html,.htm" style="display:none">
+      <div class="form-row">
+        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">ファイルを選択</button>
+        <span>またはここにドラッグ&ドロップ</span>
+      </div>
+      <div id="fileName"></div>
+      <div class="form-row">
+        <label>ページ名:</label>
+        <input type="text" id="pageName" placeholder="省略時はファイル名" style="width:180px">
+      </div>
+      <div class="form-row">
+        <label>メモ:</label>
+        <input type="text" id="uploadMemo" placeholder="任意" style="width:300px">
+      </div>
+      <div class="form-row">
+        <button class="btn btn-primary" id="uploadBtn" onclick="doUpload()" disabled>アップロード</button>
+      </div>
+    </div>
+  </div>
+  <div class="col">
+    <!-- Google Drive から読み込む -->
+    <h2 style="margin-top:12px">Google Drive から読み込む</h2>
+    <div class="drive-import">
+      <p style="font-size:13px;margin:0 0 10px;line-height:1.5">
+        <a href="<?= folderUrl ?>" target="_blank">対象フォルダ</a> にHTMLファイルを置いてからスキャンしてください。
+        <br>未登録ファイルを自動で読み込みます（投稿者=ファイル所有者）。
+      </p>
+      <button class="btn btn-primary" id="scanBtn" onclick="scanDrive()">Drive フォルダをスキャン</button>
+      <div id="scanResult" style="margin-top:10px;font-size:13px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- メッセージ表示エリア -->
+<div class="msg msg-success" id="successMsg"></div>
+<div class="msg msg-error" id="errorMsg"></div>
+
+<!-- ページ一覧 + キーワード検索 -->
+<div class="list-header">
+  <h2 style="margin:0">公開ページ一覧
+    <? if (totalCount > 0) { ?>
+      <span class="count" id="pageCount">(<?= totalCount ?>件)</span>
+    <? } ?>
+  </h2>
+  <? if (displayPages.length > 0) { ?>
+    <div style="position:relative;display:inline-block">
+      <input type="text" id="searchInput" class="search-input" placeholder="ページ名・投稿者・メモ・本文で検索..." oninput="filterTable()">
+      <span id="searchStatus" class="search-status"></span>
+    </div>
+  <? } ?>
+</div>
+
+<? if (displayPages.length === 0) { ?>
+  <p class="empty">公開ページはまだありません。</p>
+<? } else { ?>
+  <table id="pageTable">
+    <tr>
+      <th>ページ名</th>
+      <th>投稿者</th>
+      <th>メモ</th>
+      <th>Ver</th>
+      <th>最終更新</th>
+      <th>サイズ</th>
+      <th>公開</th>
+      <th>操作</th>
+    </tr>
+    <? displayPages.forEach(function(page) {
+      var date = new Date(page.lastUpdated);
+      var dateStr = date.getFullYear() + '/' + (date.getMonth() + 1) + '/' + date.getDate() + ' ' + date.getHours() + ':' + ('0' + date.getMinutes()).slice(-2);
+      var sizeKb = (page.size / 1024).toFixed(1) + ' KB';
+      var safeName = page.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+      var safeMemo = (page.memo || '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+      var escapedName = page.name.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      var escapedAuthor = (page.author ? page.author.split('@')[0] : '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      var escapedMemo = (page.memo || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+      var pubUrl = baseUrl + '?page=' + encodeURIComponent(page.name);
+    ?>
+    <tr id="row-<?= page.name ?>">
+      <td><a href="<?= navBaseUrl ?>?page=<?= encodeURIComponent(page.name) ?>" target="_blank"><?!= escapedName ?></a></td>
+      <td class="author"><?!= escapedAuthor ?></td>
+      <td class="memo-cell">
+        <span class="memo-text" id="memo-<?= page.name ?>" title="<?!= escapedMemo ?>"><?!= escapedMemo ?></span>
+        <button class="btn-icon" onclick="editMemo('<?!= safeName ?>', '<?!= safeMemo ?>')" title="メモ編集">&#9998;</button>
+      </td>
+      <td class="ver-cell">
+        <span>v<?= page.currentVersion ?></span>
+        <? if (page.versionCount > 1) { ?>
+          <button class="btn-link" onclick="showHistory('<?!= safeName ?>')">履歴</button>
+        <? } ?>
+      </td>
+      <td><?!= dateStr ?></td>
+      <td><?!= sizeKb ?></td>
+      <td class="public-cell" id="pubcell-<?= page.name ?>">
+        <button class="btn-sm <?= page.public ? 'btn-public-on' : 'btn-public-off' ?>" id="pub-<?= page.name ?>" onclick="togglePub('<?!= safeName ?>')"><?= page.public ? '公開中' : '非公開' ?></button>
+        <div class="pub-link" id="publink-<?= page.name ?>">
+          <? if (page.public) { ?>
+            <a href="<?= pubUrl ?>" target="_blank" class="pub-link-a" title="<?= pubUrl ?>">外部リンク</a>
+            <button class="btn-copy" onclick="copyUrl('<?!= safeName ?>')" title="URLをコピー"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>
+          <? } ?>
+        </div>
+      </td>
+      <td class="actions">
+        <button class="btn-sm btn-preview" onclick="doPreview('<?!= safeName ?>')">プレビュー</button>
+        <button class="btn-sm btn-danger" onclick="doDelete('<?!= safeName ?>')">削除</button>
+      </td>
+    </tr>
+    <? }); ?>
+  </table>
+<? } ?>
+
+<!-- ページネーション -->
+<? if (totalPages > 1) { ?>
+  <div class="pagination">
+    <? for (var i = 1; i <= totalPages; i++) { ?>
+      <? if (i === pageNum) { ?>
+        <span class="page-current"><?= i ?></span>
+      <? } else { ?>
+        <a class="page-link" href="<?= baseUrl ?>?p=<?= i ?>"><?= i ?></a>
+      <? } ?>
+    <? } ?>
+  </div>
+<? } ?>
+
+<!-- プレビューモーダル -->
+<div class="modal-overlay" id="previewOverlay" onclick="closePreview()">
+  <div class="modal modal-preview" id="previewModal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="previewTitle">プレビュー</h3>
+      <div class="modal-header-btns">
+        <button class="btn-maximize" id="maximizeBtn" onclick="toggleMaximize()" title="最大化/元に戻す">&#9634;</button>
+        <button class="modal-close" onclick="closePreview()">&times;</button>
+      </div>
+    </div>
+    <div class="modal-body" id="previewBody"></div>
+  </div>
+</div>
+
+<!-- 履歴モーダル -->
+<div class="modal-overlay" id="historyOverlay" onclick="closeHistory()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="historyTitle">バージョン履歴</h3>
+      <button class="modal-close" onclick="closeHistory()">&times;</button>
+    </div>
+    <div class="modal-body" id="historyBody"></div>
+  </div>
+</div>
+
+<!-- メモ編集モーダル -->
+<div class="modal-overlay" id="memoOverlay" onclick="closeMemo()">
+  <div class="modal" style="max-width:500px" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>メモ編集</h3>
+      <button class="modal-close" onclick="closeMemo()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <textarea id="memoInput" rows="3" style="width:100%;box-sizing:border-box"></textarea>
+      <input type="hidden" id="memoPageName">
+      <div style="margin-top:12px;text-align:right">
+        <button class="btn btn-primary" onclick="saveMemo()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ベースURL（リダイレクト用）
+var BASE_URL = "<?= baseUrl ?>";
+
+// escapeHtml ヘルパー（表示用）
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// GAS iframe内からのリダイレクト（target="_top"で親フレームをナビゲート）
+function goTop() {
+  var link = '<a href="' + BASE_URL + '" target="_top" style="color:#155724;text-decoration:underline;margin-left:8px">トップに戻る</a>';
+  var el = document.getElementById("successMsg");
+  el.innerHTML = el.textContent + link;
+  try { window.open(BASE_URL, "_top"); } catch(e) {}
+}
+
+// プレビューキャッシュ（クライアント側）
+var previewCache = {};
+
+// ファイルアップロード
+var fileContent = null;
+
+document.getElementById("fileInput").addEventListener("change", function(e) {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+var dz = document.getElementById("dropZone");
+dz.addEventListener("dragover", function(e) { e.preventDefault(); dz.classList.add("dragover"); });
+dz.addEventListener("dragleave", function() { dz.classList.remove("dragover"); });
+dz.addEventListener("drop", function(e) { e.preventDefault(); dz.classList.remove("dragover"); if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); });
+
+function handleFile(file) {
+  document.getElementById("fileName").textContent = file.name + " (" + (file.size/1024).toFixed(1) + " KB)";
+  var ni = document.getElementById("pageName");
+  if (!ni.value) ni.value = file.name.replace(/\.html?$/i, "");
+  var r = new FileReader();
+  r.onload = function(e) { fileContent = e.target.result; document.getElementById("uploadBtn").disabled = false; };
+  r.readAsText(file);
+}
+
+// アップロード実行
+function doUpload() {
+  if (!fileContent) return;
+  var name = document.getElementById("pageName").value.trim();
+  var memo = document.getElementById("uploadMemo").value.trim();
+  if (!name) { showMsg("error", "ページ名を入力してください"); return; }
+  setUploading(true);
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.success) { showMsg("success", r.name + " v" + r.version + " をアップロードしました"); setTimeout(function() { goTop(); }, 1500); }
+    else { showMsg("error", r.error); setUploading(false); }
+  }).withFailureHandler(function(e) { showMsg("error", e.message); setUploading(false); }).uploadHtml(name, fileContent, memo);
+}
+
+function setUploading(on) {
+  var b = document.getElementById("uploadBtn");
+  b.disabled = on; b.textContent = on ? "アップロード中..." : "アップロード";
+}
+
+// 削除
+function doDelete(name) {
+  if (!confirm(name + " を削除しますか？（全バージョン削除されます）")) return;
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.success) { var row = document.getElementById("row-" + name); if (row) row.remove(); showMsg("success", name + " を削除しました"); }
+    else { showMsg("error", r.error); }
+  }).withFailureHandler(function(e) { showMsg("error", e.message); }).deleteHtml(name);
+}
+
+// Drive フォルダスキャン（即読み込み）
+function scanDrive() {
+  var btn = document.getElementById("scanBtn");
+  var res = document.getElementById("scanResult");
+  btn.disabled = true; btn.textContent = "スキャン中...";
+  res.innerHTML = "";
+  google.script.run.withSuccessHandler(function(r) {
+    btn.disabled = false; btn.textContent = "Drive フォルダをスキャン";
+    if (!r.success) { showMsg("error", r.error); return; }
+    if (r.count === 0) { res.innerHTML = '<span style="color:#939DA7">未登録のHTMLファイルはありませんでした。</span>'; return; }
+    var names = r.imported.map(function(f) { return f.name; }).join(", ");
+    showMsg("success", r.count + "件を読み込みました: " + names);
+    setTimeout(function() { goTop(); }, 1500);
+  }).withFailureHandler(function(e) { btn.disabled = false; btn.textContent = "Drive フォルダをスキャン"; showMsg("error", e.message); }).scanAndImportDriveFiles();
+}
+
+// プレビュー（プリフェッチ対応）
+function renderPreview(content) {
+  var iframe = document.createElement("iframe");
+  iframe.sandbox = "allow-same-origin";
+  document.getElementById("previewBody").innerHTML = "";
+  document.getElementById("previewBody").appendChild(iframe);
+  iframe.contentDocument.open(); iframe.contentDocument.write(content); iframe.contentDocument.close();
+}
+
+function doPreview(name) {
+  document.getElementById("previewTitle").textContent = name + " - プレビュー";
+  document.getElementById("previewOverlay").style.display = "block";
+  if (previewCache[name]) { renderPreview(previewCache[name]); return; }
+  document.getElementById("previewBody").innerHTML = "<p>読み込み中...</p>";
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.success) { previewCache[name] = r.content; renderPreview(r.content); }
+    else { document.getElementById("previewBody").innerHTML = "<p>エラー: " + r.error + "</p>"; }
+  }).withFailureHandler(function(e) { document.getElementById("previewBody").innerHTML = "<p>エラー: " + e.message + "</p>"; }).getPageContent(name);
+}
+
+function closePreview() {
+  document.getElementById("previewOverlay").style.display = "none";
+  document.getElementById("previewBody").innerHTML = "";
+  var m = document.getElementById("previewModal");
+  m.classList.remove("maximized");
+  m.style.width = "";
+  m.style.height = "";
+}
+
+// 最大化トグル
+function toggleMaximize() {
+  var m = document.getElementById("previewModal");
+  var isMax = m.classList.toggle("maximized");
+  if (isMax) { m.style.width = ""; m.style.height = ""; }
+  document.getElementById("maximizeBtn").innerHTML = isMax ? "&#9645;" : "&#9634;";
+}
+
+// 履歴
+function showHistory(name) {
+  document.getElementById("historyTitle").textContent = name + " - バージョン履歴";
+  document.getElementById("historyBody").innerHTML = "<p>読み込み中...</p>";
+  document.getElementById("historyOverlay").style.display = "block";
+  google.script.run.withSuccessHandler(function(r) {
+    if (!r.success) { document.getElementById("historyBody").innerHTML = "<p>" + r.error + "</p>"; return; }
+    var h = '<table class="history-table"><tr><th>Ver</th><th>日時</th><th>投稿者</th><th>サイズ</th><th>備考</th><th>プレビュー</th><th>操作</th></tr>';
+    r.versions.forEach(function(v) {
+      var d = new Date(v.date);
+      var ds = d.getFullYear() + "/" + (d.getMonth()+1) + "/" + d.getDate() + " " + d.getHours() + ":" + ("0"+d.getMinutes()).slice(-2);
+      var sz = (v.size/1024).toFixed(1) + " KB";
+      var isCurrent = v.version === r.currentVersion;
+      h += "<tr><td>v" + v.version + (isCurrent ? " (現在)" : "") + "</td>";
+      h += "<td>" + ds + "</td><td>" + (v.author ? v.author.split("@")[0] : "") + "</td><td>" + sz + "</td>";
+      h += '<td style="font-size:11px;color:#666">' + (v.note || "") + "</td>";
+      h += "<td>";
+      if (isCurrent) {
+        h += '<button class="btn-sm btn-preview" onclick="doPreview(\'' + name + '\')">表示</button>';
+      } else if (v.hasFile) {
+        h += '<button class="btn-sm btn-preview" onclick="previewVersion(\'' + name + '\', ' + v.version + ')">表示</button>';
+      } else {
+        h += '<span style="color:#999;font-size:11px">ファイルなし</span>';
+      }
+      h += "</td><td>";
+      if (!isCurrent && v.hasFile) {
+        h += '<button class="btn-sm" style="background:#e8f5e9;color:#2e7d32" onclick="restoreVer(\'' + name + '\', ' + v.version + ')">復元</button>';
+      } else if (!isCurrent) {
+        h += '<span style="color:#999;font-size:11px">\u2014</span>';
+      }
+      h += "</td></tr>";
+    });
+    h += "</table>";
+    document.getElementById("historyBody").innerHTML = h;
+  }).withFailureHandler(function(e) { document.getElementById("historyBody").innerHTML = "<p>エラー: " + e.message + "</p>"; }).getVersionHistory(name);
+}
+
+function closeHistory() { document.getElementById("historyOverlay").style.display = "none"; }
+
+// バージョン指定プレビュー（履歴モーダルを閉じてプレビューモーダルを開く）
+function previewVersion(name, ver) {
+  document.getElementById("previewTitle").textContent = name + " v" + ver + " - プレビュー";
+  document.getElementById("previewOverlay").style.display = "block";
+  document.getElementById("previewBody").innerHTML = "<p>読み込み中...</p>";
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.success) { renderPreview(r.content); }
+    else { document.getElementById("previewBody").innerHTML = "<p>エラー: " + r.error + "</p>"; }
+  }).withFailureHandler(function(e) { document.getElementById("previewBody").innerHTML = "<p>エラー: " + e.message + "</p>"; }).getVersionContent(name, ver);
+}
+
+// バージョン復元
+function restoreVer(name, ver) {
+  if (!confirm("v" + ver + " を復元しますか？")) return;
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.success) { showMsg("success", name + " を v" + ver + " から復元しました"); closeHistory(); setTimeout(function() { goTop(); }, 1500); }
+    else { showMsg("error", r.error); }
+  }).withFailureHandler(function(e) { showMsg("error", e.message); }).restoreVersion(name, ver);
+}
+
+// メモ編集
+function editMemo(name, currentMemo) {
+  document.getElementById("memoPageName").value = name;
+  document.getElementById("memoInput").value = currentMemo;
+  document.getElementById("memoOverlay").style.display = "block";
+  document.getElementById("memoInput").focus();
+}
+
+function closeMemo() { document.getElementById("memoOverlay").style.display = "none"; }
+
+function saveMemo() {
+  var name = document.getElementById("memoPageName").value;
+  var memo = document.getElementById("memoInput").value.trim();
+  google.script.run.withSuccessHandler(function(r) {
+    if (r.success) {
+      var el = document.getElementById("memo-" + name);
+      if (el) el.textContent = memo;
+      closeMemo(); showMsg("success", "メモを更新しました");
+    } else { showMsg("error", r.error); }
+  }).withFailureHandler(function(e) { showMsg("error", e.message); }).updateMemo(name, memo);
+}
+
+// 公開/非公開トグル
+function togglePub(name) {
+  var btn = document.getElementById("pub-" + name);
+  var isPublic = btn.classList.contains("btn-public-on");
+  var msg = isPublic ? name + " を非公開にしますか？" : name + " を外部公開しますか？\n\n公開すると組織外のユーザーもアクセスできます。";
+  if (!confirm(msg)) return;
+  btn.disabled = true;
+  google.script.run.withSuccessHandler(function(r) {
+    btn.disabled = false;
+    if (r.success) {
+      btn.textContent = r.public ? "公開中" : "非公開";
+      btn.className = "btn-sm " + (r.public ? "btn-public-on" : "btn-public-off");
+      var linkEl = document.getElementById("publink-" + name);
+      if (r.public && r.url) {
+        linkEl.innerHTML = '<a href="' + r.url + '" target="_blank" class="pub-link-a" title="' + r.url + '">外部リンク</a>'
+          + '<button class="btn-copy" onclick="copyUrl(\'' + name + '\')" title="URLをコピー"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg></button>';
+        showMsg("success", name + " を外部公開しました");
+      } else {
+        linkEl.innerHTML = "";
+        showMsg("success", name + " を非公開にしました");
+      }
+    } else { showMsg("error", r.error); }
+  }).withFailureHandler(function(e) { btn.disabled = false; showMsg("error", e.message); }).togglePublic(name);
+}
+
+// URLコピー
+function copyUrl(name) {
+  var url = BASE_URL + "?page=" + encodeURIComponent(name);
+  navigator.clipboard.writeText(url).then(function() {
+    showMsg("success", "URLをコピーしました: " + url);
+  }).catch(function() {
+    prompt("URLをコピーしてください:", url);
+  });
+}
+
+// メッセージ表示
+function showMsg(type, text) {
+  document.getElementById("successMsg").style.display = "none";
+  document.getElementById("errorMsg").style.display = "none";
+  var el = document.getElementById(type === "success" ? "successMsg" : "errorMsg");
+  el.textContent = text; el.style.display = "block";
+  setTimeout(function() { el.style.display = "none"; }, 5000);
+}
+
+// キーワード検索フィルタ（ページ名・投稿者・メモ+本文）
+var searchTimer = null;
+var contentMatches = {};
+
+// クライアント側フィルタ（即座）+ 本文検索（デバウンス）
+function filterTable() {
+  var q = document.getElementById("searchInput").value.toLowerCase();
+  applyFilter(q);
+  clearTimeout(searchTimer);
+  if (q.length >= 2) {
+    document.getElementById("searchStatus").textContent = "本文検索中...";
+    searchTimer = setTimeout(function() { doContentSearch(q); }, 500);
+  } else {
+    document.getElementById("searchStatus").textContent = "";
+    contentMatches = {};
+  }
+}
+
+// テーブルフィルタ適用（名前・投稿者・メモ + contentMatches）
+function applyFilter(q) {
+  var table = document.getElementById("pageTable");
+  if (!table) return;
+  var rows = table.querySelectorAll("tr");
+  var visible = 0;
+  for (var i = 1; i < rows.length; i++) {
+    var cells = rows[i].querySelectorAll("td");
+    var name = cells[0] ? cells[0].textContent.toLowerCase() : "";
+    var author = cells[1] ? cells[1].textContent.toLowerCase() : "";
+    var memo = cells[2] ? cells[2].textContent.toLowerCase() : "";
+    var localMatch = name.indexOf(q) >= 0 || author.indexOf(q) >= 0 || memo.indexOf(q) >= 0;
+    var bodyMatch = contentMatches[cells[0] ? cells[0].textContent : ""] || false;
+    var match = !q || localMatch || bodyMatch;
+    rows[i].style.display = match ? "" : "none";
+    if (match) visible++;
+  }
+  var countEl = document.getElementById("pageCount");
+  if (countEl) countEl.textContent = "(" + visible + "件)";
+}
+
+// サーバーサイド本文検索
+function doContentSearch(q) {
+  google.script.run.withSuccessHandler(function(r) {
+    document.getElementById("searchStatus").textContent = "";
+    if (!r.success) return;
+    contentMatches = {};
+    r.matches.forEach(function(name) { contentMatches[name] = true; });
+    var currentQ = document.getElementById("searchInput").value.toLowerCase();
+    applyFilter(currentQ);
+  }).withFailureHandler(function() {
+    document.getElementById("searchStatus").textContent = "";
+  }).searchContent(q);
+}
+
+// ESCキーでモーダルを閉じる
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") { closePreview(); closeHistory(); closeMemo(); }
+});
+
+// ファビコンをJSで動的にセット（GAS iframe対策）
+(function(){
+  try {
+    var fi = "data:image/png;base64,<?= faviconB64 ?>";
+    var el = document.querySelector("link[rel*=icon]");
+    if (!el) { el = document.createElement("link"); el.rel = "icon"; document.head.appendChild(el); }
+    el.type = "image/png"; el.href = fi;
+  } catch(e) {}
+})();
+
+// ページ表示後にサーバー側キャッシュを非同期でウォーム（表示をブロックしない）
+setTimeout(function(){ google.script.run.prefetchContentToCache_(); }, 500);
+</script>
+
+</body>
+</html>

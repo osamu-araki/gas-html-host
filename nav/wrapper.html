@@ -1,0 +1,218 @@
+<!-- Version: 2.0.0 | Updated: 2026-03-13 -->
+<!-- HTML Host ナビゲーションラッパー テンプレート -->
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/png" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGNggAKt2Qv/k4IZkAGpmlEMIVcz3BBiFE05e4F0A0AAG5soA5A1wGzHZQiGAegKkZ2PzRAGfJqx+R9dDV4DsAUeXgNw+Z9oL6ArJOR/2kUjocRDlAHEYsozE6XZGQCLeGgrqauFjAAAAABJRU5ErkJggg==">
+  <title><?= pageName ?> - HTML Host</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f5f5;overflow:hidden}
+    /* ナビバー */
+    .navbar{position:fixed;top:0;left:0;right:0;height:40px;background:#283C50;color:#fff;display:flex;align-items:center;padding:0 10px;z-index:1000;box-shadow:0 1px 3px rgba(0,0,0,.25);gap:8px;font-size:13px;transition:transform .25s ease,opacity .25s ease}
+    .navbar.hidden{transform:translateY(-100%);opacity:0;pointer-events:none}
+    .navbar.peek{transform:translateY(0);opacity:1;pointer-events:auto}
+    .navbar a{color:#94CDD0;text-decoration:none}.navbar a:hover{color:#fff}
+    .nav-home{display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:4px;background:rgba(255,255,255,.1);font-size:12px;cursor:pointer;white-space:nowrap}
+    .nav-home:hover{background:rgba(255,255,255,.2)}
+    .nav-sep{color:#596d82;margin:0 1px}
+    .nav-page-name{font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;font-size:13px}
+    .nav-memo{color:#7b8fa3;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+    .nav-actions{display:flex;align-items:center;gap:2px;margin-left:auto;flex-shrink:0}
+    .nav-btn{background:transparent;color:#7b8fa3;border:none;width:28px;height:28px;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center}
+    .nav-btn:hover{background:rgba(255,255,255,.12);color:#fff}
+    .nav-link{color:#7b8fa3;font-size:11px;padding:4px 6px;border-radius:4px;white-space:nowrap}
+    .nav-link:hover{background:rgba(255,255,255,.1);color:#94CDD0}
+    /* ホバーゾーン・復帰ボタン */
+    .hover-zone{position:fixed;top:0;left:0;right:0;height:6px;z-index:999;display:none}
+    .hover-zone.active{display:block}
+    .restore-btn{position:fixed;top:8px;right:8px;z-index:998;background:rgba(40,60,80,.6);color:rgba(255,255,255,.7);border:none;width:28px;height:28px;border-radius:6px;cursor:pointer;font-size:14px;display:none;align-items:center;justify-content:center;backdrop-filter:blur(4px);transition:opacity .2s;opacity:.4}
+    .restore-btn:hover{opacity:1;background:rgba(40,60,80,.9);color:#fff}
+    .restore-btn.visible{display:flex}
+    /* ドロワー */
+    .drawer-overlay{position:fixed;top:40px;left:0;right:0;bottom:0;background:rgba(0,0,0,.35);z-index:900;opacity:0;pointer-events:none;transition:opacity .2s}
+    .drawer-overlay.open{opacity:1;pointer-events:auto}
+    .drawer{position:fixed;top:40px;left:0;bottom:0;width:320px;background:#fff;z-index:950;transform:translateX(-100%);transition:transform .2s ease;display:flex;flex-direction:column;box-shadow:2px 0 8px rgba(0,0,0,.12)}
+    .drawer.open{transform:translateX(0)}
+    .drawer-header{padding:10px 12px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:8px;flex-shrink:0}
+    .drawer-search{flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:4px;font-size:13px;outline:none}
+    .drawer-search:focus{border-color:#2A9BA1;box-shadow:0 0 0 2px rgba(42,155,161,.15)}
+    .drawer-list{flex:1;overflow-y:auto;padding:2px 0}
+    .drawer-item{display:block;padding:8px 14px;text-decoration:none;color:#283C50;border-left:3px solid transparent;cursor:pointer}
+    .drawer-item:hover{background:#f3f4f6}
+    .drawer-item.active{background:#e6f7f8;border-left-color:#2A9BA1}
+    .drawer-item-name{font-size:13px;font-weight:500}
+    .drawer-item-meta{font-size:11px;color:#939DA7;display:flex;gap:8px;margin-top:1px}
+    .drawer-item-memo{font-size:11px;color:#6b7280;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+    .drawer-home{display:block;padding:10px 14px;text-decoration:none;color:#2A9BA1;font-size:13px;font-weight:500;border-bottom:1px solid #e5e7eb}
+    .drawer-home:hover{background:#e6f7f8}
+    /* iframe */
+    .content-frame{position:fixed;top:40px;left:0;right:0;bottom:0;border:none;width:100%;height:calc(100vh - 40px);transition:top .25s ease,height .25s ease}
+    .content-frame.fullscreen{top:0;height:100vh}
+    /* モバイル */
+    @media(max-width:600px){.drawer{width:85vw}.nav-memo{display:none}.nav-page-name{max-width:140px}}
+  </style>
+</head>
+<body>
+
+<!-- ホバーゾーン・復帰ボタン -->
+<div class="hover-zone" id="hoverZone"></div>
+<button class="restore-btn" id="restoreBtn" title="ナビバーを表示 (Esc)">&#9660;</button>
+
+<!-- ナビバー -->
+<nav class="navbar" id="navbar">
+  <a class="nav-home" onclick="toggleDrawer();return false">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h18M3 6h18M3 18h18"/></svg> 一覧</a>
+  <span class="nav-sep">&#8250;</span>
+  <span class="nav-page-name" id="currentPageName"><?= pageName ?></span>
+  <span class="nav-memo" id="currentMemo"><? if (currentMemo) { ?>&mdash; <?= currentMemo ?><? } ?></span>
+  <div class="nav-actions">
+    <a class="nav-link" id="rawLink" href="<?= iframeSrc ?>" target="_blank" title="ナビバーなしで表示">&#8599; 別タブで開く</a>
+    <button class="nav-btn" id="prevBtn" onclick="navigate(-1)" title="前のページ">&#8249;</button>
+    <button class="nav-btn" id="nextBtn" onclick="navigate(1)" title="次のページ">&#8250;</button>
+    <button class="nav-btn" onclick="toggleFullscreen()" title="全画面表示">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+    </button>
+  </div>
+</nav>
+
+<!-- ドロワー -->
+<div class="drawer-overlay" id="drawerOverlay" onclick="toggleDrawer()"></div>
+<div class="drawer" id="drawer">
+  <a class="drawer-home" href="<?= hostBaseUrl ?>">&larr; トップページ（アップロード・管理）</a>
+  <div class="drawer-header"><input type="text" class="drawer-search" id="drawerSearch" placeholder="ページを検索..." oninput="filterPages(this.value)"></div>
+  <div class="drawer-list" id="drawerList"></div>
+</div>
+
+<!-- iframe -->
+<iframe class="content-frame" id="contentFrame" src="<?= iframeSrc ?>"></iframe>
+
+<script>
+var HOST_BASE_URL = <?!= JSON.stringify(hostBaseUrl) ?>;
+var pages = <?!= pagesJson ?>;
+var currentIndex = <?!= currentIndex ?>;
+
+// エスケープ
+function esc(s) {
+  var d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// プリフェッチ
+var pfCache = {};
+function prefetch(idx) {
+  [idx - 1, idx + 1, idx + 2].forEach(function(i) {
+    if (i >= 0 && i < pages.length && !pfCache[i]) {
+      pfCache[i] = true;
+      var l = document.createElement("link");
+      l.rel = "prefetch";
+      l.href = HOST_BASE_URL + "?page=" + encodeURIComponent(pages[i].name);
+      document.head.appendChild(l);
+    }
+  });
+}
+
+// ドロワー描画
+function renderDrawer(filter) {
+  var list = document.getElementById("drawerList");
+  var filtered = filter ? pages.filter(function(p) {
+    return (p.name + " " + p.author + " " + p.memo).toLowerCase().indexOf(filter.toLowerCase()) >= 0;
+  }) : pages;
+  var h = "";
+  filtered.forEach(function(p) {
+    var idx = pages.indexOf(p);
+    var cls = idx === currentIndex ? " active" : "";
+    h += "<div class=\"drawer-item" + cls + "\" onclick=\"selectPage(" + idx + ")\">";
+    h += "<div class=\"drawer-item-name\">" + esc(p.name) + "</div>";
+    if (p.memo) h += "<div class=\"drawer-item-memo\">" + esc(p.memo) + "</div>";
+    h += "<div class=\"drawer-item-meta\"><span>" + (p.author || "\u2014") + "</span><span>" + p.date + "</span></div>";
+    h += "</div>";
+  });
+  list.innerHTML = h;
+}
+
+// ドロワー開閉
+function toggleDrawer() {
+  document.getElementById("drawer").classList.toggle("open");
+  document.getElementById("drawerOverlay").classList.toggle("open");
+  if (document.getElementById("drawer").classList.contains("open"))
+    setTimeout(function() { document.getElementById("drawerSearch").focus(); }, 200);
+}
+
+// ページ選択
+function selectPage(idx) {
+  currentIndex = idx;
+  var p = pages[idx];
+  document.getElementById("currentPageName").textContent = p.name;
+  document.getElementById("currentMemo").textContent = p.memo ? "\u2014 " + p.memo : "";
+  var url = HOST_BASE_URL + "?page=" + encodeURIComponent(p.name);
+  document.getElementById("rawLink").href = url;
+  document.getElementById("contentFrame").src = url;
+  renderDrawer(document.getElementById("drawerSearch").value);
+  document.getElementById("drawer").classList.remove("open");
+  document.getElementById("drawerOverlay").classList.remove("open");
+  prefetch(idx);
+}
+
+// ナビゲーション
+function navigate(dir) {
+  var n = currentIndex + dir;
+  if (n >= 0 && n < pages.length) selectPage(n);
+}
+
+// 検索
+function filterPages(v) { renderDrawer(v); }
+
+// 全画面
+var isFS = false, peekT = null;
+function toggleFullscreen() {
+  isFS = !isFS;
+  var nb = document.getElementById("navbar"), fr = document.getElementById("contentFrame");
+  var hz = document.getElementById("hoverZone"), rb = document.getElementById("restoreBtn");
+  if (isFS) {
+    nb.classList.add("hidden");
+    fr.classList.add("fullscreen");
+    hz.classList.add("active");
+    rb.classList.add("visible");
+    document.getElementById("drawer").classList.remove("open");
+    document.getElementById("drawerOverlay").classList.remove("open");
+  } else {
+    nb.classList.remove("hidden");
+    nb.classList.remove("peek");
+    fr.classList.remove("fullscreen");
+    hz.classList.remove("active");
+    rb.classList.remove("visible");
+  }
+}
+
+// ホバーで一時表示
+document.getElementById("hoverZone").addEventListener("mouseenter", function() {
+  if (!isFS) return;
+  document.getElementById("navbar").classList.remove("hidden");
+  document.getElementById("navbar").classList.add("peek");
+  clearTimeout(peekT);
+});
+document.getElementById("navbar").addEventListener("mouseleave", function() {
+  if (!isFS) return;
+  peekT = setTimeout(function() {
+    document.getElementById("navbar").classList.add("hidden");
+    document.getElementById("navbar").classList.remove("peek");
+  }, 400);
+});
+document.getElementById("navbar").addEventListener("mouseenter", function() { clearTimeout(peekT); });
+
+// 復帰ボタン
+document.getElementById("restoreBtn").addEventListener("click", function() { toggleFullscreen(); });
+
+// Escキー
+document.addEventListener("keydown", function(e) { if (e.key === "Escape" && isFS) toggleFullscreen(); });
+
+// 初期化
+renderDrawer();
+prefetch(currentIndex);
+</script>
+</body>
+</html>
