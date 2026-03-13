@@ -1,4 +1,5 @@
-// Version: 2.7.5 | Updated: 2026-03-13
+// Version: 2.8.0 | Updated: 2026-03-13
+// [2026-03-13] v2.8.0: ファイル単位の外部公開機能（public フラグ + ドメインチェック）
 // [2026-03-13] v2.7.5: 復元時にメモを上書きしない、復元情報を履歴の備考欄に記録
 // [2026-03-13] v2.7.3: ナビラッパーを別GASに分離、?page=xxxは常に生HTML配信に戻す
 // [2026-03-12] v2.7.2: メモ欄にtitle属性追加（マウスオーバーで全文表示）
@@ -13,6 +14,8 @@
 
 const FOLDER_ID = PropertiesService.getScriptProperties().getProperty('FOLDER_ID');
 const ITEMS_PER_PAGE = 100;
+// [2026-03-13] 組織ドメイン（外部公開チェック用）
+const DOMAIN = 'salesnow.jp';
 // [2026-03-13] ナビラッパー GAS の Web App URL
 const NAV_BASE_URL = 'https://script.google.com/a/macros/salesnow.jp/s/AKfycbw7n-hjRZvTfR0zKsKUJ_jTM5b-ZqluneGj5YyTABxEgYD3HoJgIPLIah4hrDPo3buN6g/exec';
 // [2026-03-11] ファビコン base64（16x16 PNG、ティール背景に白い </> マーク）
@@ -25,9 +28,19 @@ var FAVICON_B64_ = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAZElEQVR4nGNg
 function doGet(e) {
   const pageName = e.parameter.page;
   const version = e.parameter.v;
+
+  // [2026-03-13] 一覧ページはドメインユーザーのみ
   if (!pageName) {
+    if (!isDomainUser_()) {
+      return createAccessDeniedPage_();
+    }
     const pageNum = parseInt(e.parameter.p) || 1;
     return createIndexPage_(pageNum);
+  }
+
+  // [2026-03-13] 非公開ページはドメインユーザーのみ
+  if (!isDomainUser_() && !isPublicPage_(pageName)) {
+    return createAccessDeniedPage_();
   }
 
   // [2026-03-11] バージョン指定対応
@@ -241,7 +254,8 @@ function listPages() {
       author: meta.author || '',
       memo: meta.memo || '',
       currentVersion: meta.currentVersion || 1,
-      versionCount: versions.length
+      versionCount: versions.length,
+      public: meta.public === true
     });
   }
 
@@ -463,6 +477,27 @@ function updateMemo(name, memo) {
   saveMetadata_(metadata);
   invalidateCache_();
   return { success: true, name: name };
+}
+
+/**
+ * [2026-03-13] ページの公開/非公開を切り替え
+ */
+function togglePublic(name) {
+  const metadata = getMetadata_();
+  if (!metadata.pages[name]) {
+    return { success: false, error: 'ページが見つかりません' };
+  }
+  var isPublic = !metadata.pages[name].public;
+  metadata.pages[name].public = isPublic;
+  saveMetadata_(metadata);
+  invalidateCache_();
+  var baseUrl = ScriptApp.getService().getUrl();
+  return {
+    success: true,
+    name: name,
+    public: isPublic,
+    url: isPublic ? baseUrl + '?page=' + encodeURIComponent(name) : null
+  };
 }
 
 /**
@@ -715,7 +750,7 @@ function createIndexPage_(pageNum) {
   if (displayPages.length === 0) {
     html += '<p class="empty">公開ページはまだありません。</p>';
   } else {
-    html += '<table id="pageTable"><tr><th>ページ名</th><th>投稿者</th><th>メモ</th><th>Ver</th><th>最終更新</th><th>サイズ</th><th>操作</th></tr>';
+    html += '<table id="pageTable"><tr><th>ページ名</th><th>投稿者</th><th>メモ</th><th>Ver</th><th>最終更新</th><th>サイズ</th><th>公開</th><th>操作</th></tr>';
     displayPages.forEach(function(page) {
       var date = new Date(page.lastUpdated);
       // [2026-03-11] 分単位まで表示
@@ -740,6 +775,9 @@ function createIndexPage_(pageNum) {
       html += '</td>';
       html += '<td>' + dateStr + '</td>';
       html += '<td>' + sizeKb + '</td>';
+      html += '<td class="public-cell">';
+      html += '<button class="btn-sm ' + (page.public ? 'btn-public-on' : 'btn-public-off') + '" id="pub-' + page.name + '" onclick="togglePub(\'' + safeName + '\')">' + (page.public ? '公開中' : '非公開') + '</button>';
+      html += '</td>';
       html += '<td class="actions">';
       html += '<button class="btn-sm btn-preview" onclick="doPreview(\'' + safeName + '\')">プレビュー</button>';
       html += '<button class="btn-sm btn-danger" onclick="doDelete(\'' + safeName + '\')">削除</button>';
@@ -823,6 +861,13 @@ function buildStyles_() {
     'input[type="text"] { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }',
     '.input-wide { width: 100%; box-sizing: border-box; }',
     'textarea { padding: 8px 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; resize: vertical; }',
+
+    // 公開トグル
+    '.public-cell { white-space: nowrap; }',
+    '.btn-public-on { background: #e3f2fd; color: #1565c0; border-color: #1565c0; font-size: 11px; }',
+    '.btn-public-on:hover { background: #bbdefb; }',
+    '.btn-public-off { background: #f5f5f5; color: #999; border-color: #ccc; font-size: 11px; }',
+    '.btn-public-off:hover { background: #eee; }',
 
     // セル
     '.author { font-size: 13px; color: #555; white-space: nowrap; }',
@@ -1190,6 +1235,27 @@ function buildScript_(baseUrl) {
   js += '  }).withFailureHandler(function(e) { showMsg("error", e.message); }).updateMemo(name, memo);';
   js += '}';
 
+  // [2026-03-13] 公開/非公開トグル
+  js += 'function togglePub(name) {';
+  js += '  var btn = document.getElementById("pub-" + name);';
+  js += '  var isPublic = btn.classList.contains("btn-public-on");';
+  js += '  var msg = isPublic ? name + " を非公開にしますか？" : name + " を外部公開しますか？\\n\\n公開すると組織外のユーザーもアクセスできます。";';
+  js += '  if (!confirm(msg)) return;';
+  js += '  btn.disabled = true;';
+  js += '  google.script.run.withSuccessHandler(function(r) {';
+  js += '    btn.disabled = false;';
+  js += '    if (r.success) {';
+  js += '      btn.textContent = r.public ? "公開中" : "非公開";';
+  js += '      btn.className = "btn-sm " + (r.public ? "btn-public-on" : "btn-public-off");';
+  js += '      if (r.public && r.url) {';
+  js += '        showMsg("success", name + " を外部公開しました。URL: " + r.url);';
+  js += '      } else {';
+  js += '        showMsg("success", name + " を非公開にしました");';
+  js += '      }';
+  js += '    } else { showMsg("error", r.error); }';
+  js += '  }).withFailureHandler(function(e) { btn.disabled = false; showMsg("error", e.message); }).togglePublic(name);';
+  js += '}';
+
   // メッセージ表示
   js += 'function showMsg(type, text) {';
   js += '  document.getElementById("successMsg").style.display = "none";';
@@ -1271,6 +1337,39 @@ function buildScript_(baseUrl) {
   js += 'setTimeout(function(){ google.script.run.prefetchContentToCache_(); }, 500);';
 
   return js;
+}
+
+// --- アクセス制御 ---
+
+// [2026-03-13] ドメインユーザー判定
+function isDomainUser_() {
+  try {
+    var email = Session.getActiveUser().getEmail();
+    return email && email.endsWith('@' + DOMAIN);
+  } catch (e) {
+    return false;
+  }
+}
+
+// [2026-03-13] ページの公開状態チェック
+function isPublicPage_(pageName) {
+  var metadata = getMetadata_();
+  var pageMeta = metadata.pages[pageName];
+  return pageMeta && pageMeta.public === true;
+}
+
+// [2026-03-13] アクセス拒否ページ
+function createAccessDeniedPage_() {
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8">';
+  html += '<title>アクセス制限</title>';
+  html += '<style>body{font-family:-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;min-height:80vh;color:#283C50;}';
+  html += '.box{text-align:center;padding:40px;border:1px solid #e0e0e0;border-radius:8px;max-width:400px;}';
+  html += 'h1{color:#e53935;font-size:20px;} p{color:#666;}</style></head><body>';
+  html += '<div class="box"><h1>アクセス制限</h1>';
+  html += '<p>このページは組織内ユーザーのみ閲覧できます。</p>';
+  html += '<p style="font-size:13px;color:#999">salesnow.jp アカウントでログインしてください。</p>';
+  html += '</div></body></html>';
+  return HtmlService.createHtmlOutput(html).setTitle('アクセス制限');
 }
 
 // --- ユーティリティ ---
