@@ -7,12 +7,15 @@ Claude Code などの CLI ツールから HTML ファイルをデプロイし、
 ## アーキテクチャ
 
 ```
-CLI (Claude Code)  →  Google Drive API  →  共有ドライブ  ←  GAS Web App  →  ブラウザ
-                      (OAuth 2.0)          (HTML保存)        (doGet配信)     (社内メンバー)
+CLI (Claude Code)  →  Google Drive API  →  共有ドライブ  ←  GAS Web App (本体)  →  生HTML配信
+                      (OAuth 2.0)          (HTML保存)        (doGet配信)
+                                                           ←  GAS Web App (ナビ)  →  ナビ付き表示
+                                                              (iframe ラッパー)       (navbar/drawer)
 ```
 
 - **アップロード**: Drive API v3 で共有ドライブに HTML ファイルを保存
-- **配信**: GAS Web App (doGet) が Drive からファイルを読み取ってブラウザに返す
+- **配信（本体GAS）**: doGet が Drive からファイルを読み取って生HTMLを返す
+- **配信（ナビGAS）**: iframe で本体GASを埋め込み、ナビバー・ドロワー・ページ遷移を提供
 - **認証**: 閲覧は Google Workspace SSO（組織ドメインのみ）
 
 ## セットアップ
@@ -48,7 +51,7 @@ cd gas-html-host
 clasp login
 
 # GAS プロジェクトを新規作成
-clasp create --type webapp --title "HTML Host"
+clasp create --type standalone --title "HTML Host"
 
 # コードをプッシュ
 clasp push --force
@@ -105,8 +108,12 @@ curl -s -X POST "https://www.googleapis.com/upload/drive/v3/files?uploadType=mul
 ### ページの閲覧
 
 ```
+# 本体GAS（生HTML配信）
 https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec          # 一覧
 https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec?page=xxx # 個別ページ
+
+# ナビGAS（ナビバー・ドロワー付き表示）
+https://script.google.com/macros/s/YOUR_NAV_DEPLOYMENT_ID/exec?page=xxx
 ```
 
 ### Claude Code スキルとの連携
@@ -150,7 +157,7 @@ cp skills/deploy-html-example.md ~/.claude/skills/deploy-html/SKILL.md
 
 ```
 gas-html-host/
-├── Code.gs              # GAS メインコード（doGet / doPost / uploadHtml 等）
+├── Code.gs              # 本体GAS メインコード（doGet / doPost / 一覧・配信・バージョン管理）
 ├── appsscript.json      # GAS マニフェスト
 ├── get-token.sh         # OAuth トークン取得・リフレッシュスクリプト
 ├── docs/
@@ -160,6 +167,10 @@ gas-html-host/
 ├── .gitignore
 └── README.md
 ```
+
+ナビラッパーGAS（別プロジェクト）:
+- iframe で本体GASのページを表示し、ナビバー・サイドドロワー・ページ遷移・全画面表示を提供
+- 本体GASの `NAV_BASE_URL` 定数からリンク
 
 以下は各自で用意（.gitignore 対象）:
 - `creds.json` — GCP OAuth クライアント認証情報
